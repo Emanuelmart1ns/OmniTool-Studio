@@ -200,7 +200,13 @@ function loadToolTemplate(toolId) {
             if (!document.getElementById(scriptId)) {
                 const script = document.createElement('script');
                 script.id = scriptId;
-                script.src = `js/tools/${toolId}.js`;
+                
+                // Map route key to correct filename
+                let filename = toolId;
+                if (toolId === 'bg-remover') filename = 'background-remover';
+                if (toolId === 'bg-generator') filename = 'background-generator';
+                
+                script.src = `js/tools/${filename}.js`;
                 script.onload = () => {
                     tools[toolId].init();
                 };
