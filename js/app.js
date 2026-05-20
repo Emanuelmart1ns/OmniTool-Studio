@@ -130,7 +130,7 @@ function loadToolTemplate(toolId) {
             if (!document.getElementById(scriptId)) {
                 const script = document.createElement('script');
                 script.id = scriptId;
-                script.src = `js/tools/${toolFileMap[toolId] || toolId}.js`;
+                script.src = `js/tools/${toolFileMap[toolId] || toolId}.js?v=1.1.2`;
                 script.onload = () => tools[toolId].init();
                 script.onerror = () => {
                     viewport.innerHTML = `<div class="text-center py-12 text-red-400 text-xs">Erro ao carregar o módulo ${tools[toolId].title}.</div>`;
