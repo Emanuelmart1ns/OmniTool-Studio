@@ -3,82 +3,98 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OmniTool Studio | Ferramentas Criativas Inteligentes</title>
-    <meta name="description" content="Acesse ferramentas online gratuitas de edição de imagem, compressão, QR codes e muito mais. Processamento 100% local e seguro.">
-    
-    <!-- Google Fonts - Outfit & Inter -->
+    <title>OmniTool Studio | Ferramentas Criativas Online Gratuitas - Remover Fundo, OCR, Canva Editor</title>
+    <meta name="description" content="Ferramentas criativas online gratuitas: remover fundo com IA, gerar fundos, extrair texto OCR, apagar objetos, mover sujeitos, editor Canva e paleta de cores. 100% local e seguro.">
+    <meta name="keywords" content="remover fundo, background remover, OCR online, extrair texto, editor de imagem, canva online, gerador de fundos IA, magic eraser, ferramentas criativas, compressão de imagem">
+    <meta name="author" content="OmniTool Studio">
+    <meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+    <link rel="canonical" href="https://omnitool.studio/">
+
+    <meta property="og:title" content="OmniTool Studio | Ferramentas Criativas Online Gratuitas">
+    <meta property="og:description" content="Remova fundos com IA, extraia textos, edite imagens no Canva Editor e muito mais. Processamento 100% local.">
+    <meta property="og:type" content="website">
+    <meta property="og:url" content="https://omnitool.studio/">
+    <meta property="og:locale" content="pt_BR">
+    <meta property="og:site_name" content="OmniTool Studio">
+
+    <meta name="twitter:card" content="summary_large_image">
+    <meta name="twitter:title" content="OmniTool Studio | Ferramentas Criativas Online Gratuitas">
+    <meta name="twitter:description" content="Remova fundos com IA, extraia textos, edite imagens no Canva Editor e muito mais. 100% local.">
+
+    <script type="application/ld+json">
+    {
+        "@context": "https://schema.org",
+        "@type": "WebApplication",
+        "name": "OmniTool Studio",
+        "url": "https://omnitool.studio",
+        "description": "Suíte de ferramentas criativas online gratuitas com processamento 100% local e seguro.",
+        "applicationCategory": "MultimediaApplication",
+        "operatingSystem": "All",
+        "offers": { "@type": "Offer", "price": "0", "priceCurrency": "BRL" },
+        "featureList": [
+            "Remoção de fundo com IA",
+            "Gerador de fundos com Gemini Imagen",
+            "Extração de texto OCR",
+            "Editor Canva com templates",
+            "Apagar objetos com Magic Eraser",
+            "Mover sujeitos com Magic Grab",
+            "Extrator de paleta de cores"
+        ]
+    }
+    </script>
+
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-    
-    <!-- Tailwind CSS -->
+
     <script src="https://cdn.tailwindcss.com"></script>
     <script>
         tailwind.config = {
             darkMode: 'class',
             theme: {
                 extend: {
-                    fontFamily: {
-                        sans: ['Inter', 'sans-serif'],
-                        display: ['Outfit', 'sans-serif'],
-                    },
+                    fontFamily: { sans: ['Inter', 'sans-serif'], display: ['Outfit', 'sans-serif'] },
                     colors: {
-                        slate: {
-                            950: '#070a13',
-                        },
-                        accent: {
-                            50: '#f5f3ff',
-                            100: '#ede9fe',
-                            500: '#7c3aed',
-                            600: '#6d28d9',
-                            700: '#5b21b6',
-                            900: '#3b0764',
-                        }
+                        slate: { 950: '#070a13' },
+                        accent: { 50: '#f5f3ff', 100: '#ede9fe', 500: '#7c3aed', 600: '#6d28d9', 700: '#5b21b6', 900: '#3b0764' }
                     }
                 }
             }
         }
     </script>
 
-    <!-- Font Awesome Icons -->
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
-    
-    <!-- External Tool Libraries via CDN -->
-    <!-- MediaPipe Selfie Segmentation (Background Remover) -->
+
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
-    <!-- Tesseract.js (Local OCR) -->
     <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-    <!-- Dynamic Loader for IMG.LY Background Removal -->
+
     <script type="module">
         async function loadImglyEngine() {
             try {
-                const imglyModule = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
-                const removeFn = imglyModule.removeBackground || imglyModule.default || imglyModule.imglyRemoveBackground;
-                if (removeFn) {
-                    window.imglyRemoveBackground = removeFn;
+                const m = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+                const fn = m.removeBackground || m.default || m.imglyRemoveBackground;
+                if (fn) {
+                    window.imglyRemoveBackground = fn;
                     window.imglyLoaded = true;
-                    console.log("OmniTool Studio: Motor de IA Geral (IMG.LY) inicializado com sucesso.");
                     document.dispatchEvent(new CustomEvent('imgly-ready'));
                 }
-            } catch (err) {
-                console.error("OmniTool Studio: Falha de conexão ao carregar biblioteca IMG.LY:", err);
-            }
+            } catch (e) { console.error('IMG.LY load failed:', e); }
         }
         loadImglyEngine();
     </script>
 
-    <!-- Estilos Customizados -->
+    <!-- Google AdSense placeholder - replace with real ca-pub-XXXX -->
+    <!-- <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script> -->
+
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden">
 
-    <!-- GLOW BACKGROUND EFFECT -->
     <div class="fixed top-0 left-1/4 w-[500px] h-[500px] bg-accent-600/10 rounded-full blur-[120px] pointer-events-none z-0"></div>
     <div class="fixed bottom-10 right-1/4 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none z-0"></div>
 
-    <!-- CABEÇALHO -->
-    <header class="border-b border-slate-900 bg-slate-950/70 backdrop-blur-md sticky top-0 z-40 py-4 px-6 flex items-center justify-between shrink-0">
-        <div class="flex items-center gap-3 cursor-pointer" onclick="navigateToDashboard()">
+    <header class="border-b border-slate-900 bg-slate-950/70 backdrop-blur-md sticky top-0 z-40 py-3 px-4 md:px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="navigateToDashboard()" role="button" aria-label="Voltar ao painel geral">
             <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-accent-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-accent-500/20">
                 <i class="fa-solid fa-cubes text-white text-lg"></i>
             </div>
@@ -86,44 +102,41 @@
                 <h1 class="text-lg font-display font-bold tracking-tight bg-gradient-to-r from-white via-accent-100 to-accent-500 bg-clip-text text-transparent">
                     OmniTool <span class="text-accent-500 font-medium">Studio</span>
                 </h1>
-                <p class="text-[10px] text-slate-400">Ferramentas Criativas Locais e Seguras</p>
+                <p class="text-[10px] text-slate-400 hidden sm:block">Ferramentas Criativas Locais e Seguras</p>
             </div>
         </div>
 
-        <!-- Links e Configurações -->
-        <div class="flex items-center gap-3">
-            <button onclick="toggleApiModal()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/40 text-xs text-slate-300 hover:bg-slate-800 transition">
+        <div class="flex items-center gap-2">
+            <button onclick="toggleApiModal()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/40 text-xs text-slate-300 hover:bg-slate-800 transition" aria-label="Configurar chave Gemini API">
                 <i class="fa-solid fa-key text-amber-400"></i>
                 <span id="api-status-text">Chave Gemini API</span>
             </button>
-            <button id="theme-toggle" class="h-9 w-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition">
+            <button id="theme-toggle" class="h-9 w-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition" aria-label="Alternar tema claro/escuro">
                 <i class="fa-solid fa-moon text-lg"></i>
             </button>
         </div>
     </header>
 
-    <!-- BANNER AD PLACEHOLDER (TOPO) -->
-    <div class="w-full bg-slate-950 px-6 pt-4 flex justify-center z-10 shrink-0">
-        <div class="ad-container w-full max-w-5xl h-24 bg-slate-900/40 border border-slate-900 rounded-xl flex flex-col items-center justify-center relative overflow-hidden">
-            <span class="text-[9px] text-slate-600 uppercase tracking-widest absolute top-1 left-3">Publicidade</span>
-            <!-- Espaço do Google AdSense -->
-            <div class="text-xs text-slate-500 font-medium"><i class="fa-solid fa-rectangle-ad mr-1.5"></i> Espaço para Banner Responsivo Adsense</div>
+    <!-- AD UNIT: Top Banner -->
+    <div class="w-full bg-slate-950 px-4 md:px-6 pt-3 flex justify-center z-10 shrink-0" role="complementary" aria-label="Publicidade">
+        <div class="ad-slot ad-banner-top w-full max-w-5xl h-[90px] bg-slate-900/40 border border-slate-900 rounded-xl flex flex-col items-center justify-center relative overflow-hidden">
+            <span class="text-[9px] text-slate-600 uppercase tracking-widest absolute top-1 left-3">Anúncio</span>
+            <div class="text-xs text-slate-500 font-medium"><i class="fa-solid fa-rectangle-ad mr-1.5"></i> Banner 728x90 - AdSense</div>
+            <!-- <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXX" data-ad-slot="XXXX" data-ad-format="horizontal" data-full-width-responsive="true"></ins> -->
         </div>
     </div>
 
-    <!-- ÁREA PRINCIPAL -->
-    <div class="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col md:flex-row gap-6 z-10 overflow-hidden">
-        
-        <!-- SIDEBAR DE NAVEGAÇÃO RÁPIDA -->
-        <aside class="w-full md:w-64 shrink-0 flex flex-col gap-4">
-            <div class="bg-slate-900/30 border border-slate-900 rounded-2xl p-4 flex flex-col gap-1.5">
-                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 block">Ferramentas</span>
-                
+    <div class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 flex flex-col md:flex-row gap-4 md:gap-6 z-10 overflow-hidden">
+
+        <aside class="w-full md:w-56 shrink-0 flex flex-col gap-4">
+            <nav class="bg-slate-900/30 border border-slate-900 rounded-2xl p-3 flex flex-col gap-1" aria-label="Navegação de ferramentas">
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-1 block">Ferramentas</span>
+
                 <button onclick="switchTool('dashboard')" id="nav-dashboard" class="nav-btn active flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-300 hover:bg-slate-900/50">
                     <i class="fa-solid fa-chart-simple text-sm min-w-[18px]"></i>
                     <span>Painel Geral</span>
                 </button>
-                
+
                 <button onclick="switchTool('bg-remover')" id="nav-bg-remover" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
                     <i class="fa-solid fa-wand-magic-sparkles text-sm min-w-[18px]"></i>
                     <span>Remover Fundo IA</span>
@@ -148,21 +161,31 @@
                     <i class="fa-solid fa-eraser text-sm min-w-[18px]"></i>
                     <span>Apagar Objetos</span>
                 </button>
-            </div>
 
-            <!-- AD PLACEHOLDER (LATERAL ESQUERDA) -->
-            <div class="ad-container flex-1 min-h-[250px] bg-slate-900/40 border border-slate-900 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden hidden md:flex">
-                <span class="text-[9px] text-slate-600 uppercase tracking-widest absolute top-2 left-3">Publicidade</span>
+                <button onclick="switchTool('canva-editor')" id="nav-canva-editor" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-object-group text-sm min-w-[18px]"></i>
+                    <span>Canva Editor</span>
+                    <span class="ml-auto text-[8px] bg-accent-600 text-white px-1.5 py-0.5 rounded-full font-bold uppercase">Novo</span>
+                </button>
+
+                <button onclick="switchTool('color-palette')" id="nav-color-palette" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-palette text-sm min-w-[18px]"></i>
+                    <span>Paleta de Cores</span>
+                </button>
+            </nav>
+
+            <!-- AD UNIT: Sidebar Left -->
+            <div class="ad-slot ad-sidebar-left flex-1 min-h-[250px] bg-slate-900/40 border border-slate-900 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden hidden md:flex" role="complementary" aria-label="Publicidade">
+                <span class="text-[9px] text-slate-600 uppercase tracking-widest absolute top-2 left-3">Anúncio</span>
                 <div class="text-xs text-slate-500 font-medium px-4 text-center">
                     <i class="fa-solid fa-rectangle-ad block text-lg mb-2 text-slate-600"></i>
-                    Anúncio Lateral 300x250
+                    300x250 - AdSense
                 </div>
+                <!-- <ins class="adsbygoogle" style="display:block" data-ad-client="ca-pub-XXXX" data-ad-slot="XXXX" data-ad-format="rectangle"></ins> -->
             </div>
         </aside>
 
-        <!-- CONTAINER DA FERRAMENTA ATIVA -->
-        <main id="tool-viewport" class="flex-1 bg-slate-900/20 border border-slate-900 rounded-3xl p-6 relative flex flex-col overflow-hidden min-h-[500px]">
-            <!-- Injetado dinamicamente via JS -->
+        <main id="tool-viewport" class="flex-1 bg-slate-900/20 border border-slate-900 rounded-3xl p-4 md:p-6 relative flex flex-col overflow-hidden min-h-[500px]" role="main">
             <div id="loader" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-50 rounded-3xl">
                 <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent-500 mb-4"></div>
                 <p class="text-xs text-slate-400">Carregando ferramenta...</p>
@@ -170,49 +193,51 @@
         </main>
     </div>
 
-    <!-- RODAPÉ -->
-    <footer class="border-t border-slate-900 bg-slate-950/40 py-6 px-8 text-center text-xs text-slate-500 z-10 shrink-0">
-        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+    <!-- AD UNIT: Footer Banner -->
+    <div class="w-full bg-slate-950 px-4 md:px-6 pb-2 flex justify-center z-10 shrink-0" role="complementary" aria-label="Publicidade">
+        <div class="ad-slot ad-banner-bottom w-full max-w-5xl h-[60px] bg-slate-900/40 border border-slate-900 rounded-xl flex flex-col items-center justify-center relative overflow-hidden">
+            <span class="text-[9px] text-slate-600 uppercase tracking-widest absolute top-1 left-3">Anúncio</span>
+            <div class="text-xs text-slate-500 font-medium"><i class="fa-solid fa-rectangle-ad mr-1.5"></i> Banner 728x60 - AdSense</div>
+        </div>
+    </div>
+
+    <footer class="border-t border-slate-900 bg-slate-950/40 py-4 px-6 text-center text-xs text-slate-500 z-10 shrink-0">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-3">
             <div>
-                <p>&copy; 2026 OmniTool Studio. Todos os direitos reservados. Processamento 100% local e seguro no navegador.</p>
+                <p>&copy; 2026 OmniTool Studio. Todos os direitos reservados. Processamento 100% local e seguro.</p>
             </div>
             <div class="flex items-center gap-4">
                 <a href="#" class="hover:text-slate-300">Privacidade</a>
                 <span>&bull;</span>
                 <a href="#" class="hover:text-slate-300">Termos de Uso</a>
                 <span>&bull;</span>
-                <a href="https://github.com" target="_blank" class="hover:text-slate-300"><i class="fa-brands fa-github mr-1"></i> GitHub</a>
+                <a href="#" class="hover:text-slate-300"><i class="fa-brands fa-github mr-1"></i> GitHub</a>
             </div>
         </div>
     </footer>
 
-    <!-- MODAL DE CONFIGURAÇÃO DA CHAVE API GEMINI -->
-    <div id="api-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+    <div id="api-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4" role="dialog" aria-modal="true" aria-labelledby="api-modal-title">
         <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-6 relative overflow-hidden">
             <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-accent-500"></div>
-            
             <div class="flex items-center justify-between mb-4">
                 <div class="flex items-center gap-2">
                     <i class="fa-solid fa-key text-amber-400"></i>
-                    <h3 class="font-display font-bold text-white">Configuração Gemini API</h3>
+                    <h3 id="api-modal-title" class="font-display font-bold text-white">Configuração Gemini API</h3>
                 </div>
-                <button onclick="toggleApiModal()" class="text-slate-500 hover:text-white transition">
+                <button onclick="toggleApiModal()" class="text-slate-500 hover:text-white transition" aria-label="Fechar modal">
                     <i class="fa-solid fa-times"></i>
                 </button>
             </div>
-
             <p class="text-xs text-slate-400 leading-relaxed mb-4">
-                Insira uma chave da **Gemini API** para liberar recursos avançados de **Geração Criativa de Fundos** e **Assistente de Cópia / IA Copy** nas ferramentas.
+                Insira uma chave da <strong>Gemini API</strong> para liberar recursos de <strong>Geração de Fundos IA</strong> e <strong>Aprimoramento de Prompts</strong>.
             </p>
-
             <div class="space-y-3">
                 <div>
-                    <label class="block text-xs text-slate-300 mb-1">Chave Gemini API:</label>
+                    <label for="input-api-key" class="block text-xs text-slate-300 mb-1">Chave Gemini API:</label>
                     <input type="password" id="input-api-key" placeholder="AIzaSy..." class="w-full px-3 py-2 text-xs rounded-xl border border-slate-800 bg-slate-950 text-white focus:outline-none focus:border-accent-500 transition">
                 </div>
-
                 <div class="flex items-center justify-between pt-2">
-                    <a href="https://ai.google.dev/" target="_blank" class="text-[10px] text-accent-400 hover:underline">Obter Chave Grátis <i class="fa-solid fa-arrow-up-right-from-square ml-0.5"></i></a>
+                    <a href="https://ai.google.dev/" target="_blank" rel="noopener noreferrer" class="text-[10px] text-accent-400 hover:underline">Obter Chave Grátis <i class="fa-solid fa-arrow-up-right-from-square ml-0.5"></i></a>
                     <div class="flex gap-2">
                         <button onclick="toggleApiModal()" class="px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white transition">Cancelar</button>
                         <button onclick="saveApiKey()" class="px-3 py-1.5 rounded-lg bg-accent-600 hover:bg-accent-500 text-xs font-bold text-white transition">Salvar Chave</button>
@@ -222,7 +247,6 @@
         </div>
     </div>
 
-    <!-- SCRIPTS CORE DO APP -->
     <script src="js/app.js"></script>
 </body>
 </html>

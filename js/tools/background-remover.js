@@ -1,4 +1,3 @@
-// OmniTool Studio: Background Remover Tool Module
 (function() {
     let state = {
         originalImage: null,
@@ -8,29 +7,28 @@
         maskCanvas: null,
         maskCtx: null,
         aiMaskCache: null,
-        activeAction: 'pan', // pan, wand, brush
-        brushMode: 'erase', // erase, restore
+        activeAction: 'pan',
+        brushMode: 'erase',
         brushSize: 40,
         brushHardness: 0.8,
         magicWandTolerance: 30,
-        bgColorType: 'transparent', // transparent, color
+        bgColorType: 'transparent',
         bgColorValue: '#ffffff',
         zoomScale: 1.0,
         zoomOffset: { x: 0, y: 0 },
         isDrawing: false,
         isPanning: false,
         lastMousePos: { x: 0, y: 0 },
-        splitOffset: 0.5, // 0 to 1 for split slider
-        showSplit: false,
-        imglyReady: false
+        lastImgPos: null,
+        splitOffset: 0.5,
+        showSplit: false
     };
 
     window.initBgRemover = function() {
         const viewport = document.getElementById('tool-viewport');
         viewport.innerHTML = `
             <div class="fade-in flex flex-col h-full space-y-4">
-                <!-- TOP BAR CONTROL -->
-                <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900/40 p-4 border border-slate-900 rounded-2xl">
+                <div class="top-bar">
                     <div class="flex items-center gap-2">
                         <div class="h-8 w-8 rounded-lg bg-accent-600/10 text-accent-400 flex items-center justify-center">
                             <i class="fa-solid fa-wand-magic-sparkles text-sm"></i>
@@ -40,10 +38,9 @@
                             <p class="text-[10px] text-slate-400">Recorte local inteligente e retoque manual</p>
                         </div>
                     </div>
-                    
                     <div class="flex items-center gap-2">
                         <button id="btn-show-split" class="px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/30 text-xs text-slate-300 hover:bg-slate-800 transition flex items-center gap-1.5" disabled>
-                            <i class="fa-solid fa-columns"></i> Comparação Split
+                            <i class="fa-solid fa-columns"></i> Comparar
                         </button>
                         <button id="btn-reset-mask" class="px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/30 text-xs text-red-400 hover:bg-slate-800 transition flex items-center gap-1.5" disabled>
                             <i class="fa-solid fa-rotate-left"></i> Reiniciar
@@ -54,48 +51,34 @@
                     </div>
                 </div>
 
-                <!-- WORKSPACE GRID -->
                 <div class="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-[400px]">
-                    <!-- CANVAS AREA (LEFT 3 COLS) -->
-                    <div class="lg:col-span-3 bg-slate-950/50 border border-slate-900 rounded-3xl relative flex items-center justify-center p-4 min-h-[300px] overflow-hidden" id="workspace-container">
-                        
-                        <!-- UPLOAD PLACEHOLDER -->
+                    <div class="lg:col-span-3 canvas-workspace" id="workspace-container">
                         <div id="upload-placeholder" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center cursor-pointer hover:bg-slate-900/10 transition z-10">
                             <input type="file" id="file-uploader" class="hidden" accept="image/*">
-                            <div class="h-16 w-16 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-center mb-4 group-hover:scale-105 transition">
+                            <div class="h-16 w-16 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-center mb-4">
                                 <i class="fa-solid fa-cloud-arrow-up text-accent-400 text-2xl"></i>
                             </div>
                             <h4 class="font-display font-semibold text-sm text-slate-200">Arraste ou selecione uma imagem</h4>
-                            <p class="text-xs text-slate-500 mt-1 max-w-xs">Formatos aceitos: JPEG, PNG, WebP. O processamento é local no seu dispositivo.</p>
+                            <p class="text-xs text-slate-500 mt-1 max-w-xs">Formatos aceitos: JPEG, PNG, WebP. Processamento local.</p>
                         </div>
-
-                        <!-- WORK CANVAS -->
-                        <canvas id="canvas-bg-remover" class="hidden max-w-full max-h-full cursor-crosshair rounded-xl z-0"></canvas>
-
-                        <!-- LOADER DE PROCESSAMENTO INTERNO -->
-                        <div id="internal-loader" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex-col items-center justify-center z-20 rounded-3xl">
+                        <canvas id="canvas-bg-remover" class="hidden cursor-crosshair rounded-xl z-0"></canvas>
+                        <div id="internal-loader" class="loader-overlay hidden">
                             <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent-500 mb-4"></div>
                             <h5 class="text-sm font-bold text-white" id="loader-title">Processando...</h5>
-                            <p class="text-xs text-slate-400 mt-1 max-w-xs text-center" id="loader-desc">Aguarde o processamento local.</p>
-                            <!-- PROGRESS BAR -->
-                            <div class="w-48 bg-slate-800 rounded-full h-1.5 mt-3 overflow-hidden">
-                                <div class="bg-accent-500 h-1.5 rounded-full w-0 transition-all duration-300" id="loader-progress"></div>
-                            </div>
+                            <p class="text-xs text-slate-400 mt-1 max-w-xs text-center" id="loader-desc"></p>
+                            <div class="progress-bar-track"><div class="progress-bar-fill" id="loader-progress" style="width:0%"></div></div>
                         </div>
                     </div>
 
-                    <!-- CONTROL SIDEBAR (RIGHT 1 COL) -->
-                    <div class="bg-slate-900/20 border border-slate-900 rounded-3xl p-4 flex flex-col gap-4">
-                        
-                        <!-- ENGINE TABS -->
+                    <div class="control-sidebar">
                         <div class="space-y-3">
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">1. Motores de IA</span>
+                            <span class="tool-section-title">1. Motores de IA</span>
                             <div class="grid grid-cols-2 gap-2 bg-slate-950/60 p-1.5 rounded-xl border border-slate-900">
-                                <label class="cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white" id="lbl-engine-people">
+                                <label class="engine-btn active cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all" id="lbl-engine-people">
                                     <input type="radio" name="ai-engine" value="mediapipe" checked class="hidden">
                                     <i class="fa-solid fa-user"></i> Pessoas
                                 </label>
-                                <label class="cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200" id="lbl-engine-objects">
+                                <label class="engine-btn cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200" id="lbl-engine-objects">
                                     <input type="radio" name="ai-engine" value="imgly" class="hidden">
                                     <i class="fa-solid fa-box"></i> Objetos
                                 </label>
@@ -107,13 +90,11 @@
 
                         <hr class="border-slate-900">
 
-                        <!-- INTERACTIVE TOOLS -->
                         <div class="space-y-3">
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">2. Retoques Adicionais</span>
-                            
+                            <span class="tool-section-title">2. Retoques</span>
                             <div class="grid grid-cols-3 gap-2">
-                                <button id="btn-tool-pan" class="tool-btn active p-2.5 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 font-medium transition flex flex-col items-center gap-1.5" disabled>
-                                    <i class="fa-solid fa-hand text-sm"></i> Panning
+                                <button id="btn-tool-pan" class="tool-btn active p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-950/20 text-xs text-indigo-300 font-medium transition flex flex-col items-center gap-1.5" disabled>
+                                    <i class="fa-solid fa-hand text-sm"></i> Mover
                                 </button>
                                 <button id="btn-tool-wand" class="tool-btn p-2.5 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 text-xs text-slate-400 font-medium transition flex flex-col items-center gap-1.5" disabled>
                                     <i class="fa-solid fa-wand-magic text-sm"></i> Varinha
@@ -123,14 +104,13 @@
                                 </button>
                             </div>
 
-                            <!-- DYNAMIC PANEL (WAND OR BRUSH CONTROLS) -->
                             <div id="tool-settings-wand" class="hidden bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-2">
                                 <div class="flex items-center justify-between text-[11px] text-slate-300">
-                                    <span>Tolerância da Cor:</span>
+                                    <span>Tolerância:</span>
                                     <span id="wand-tolerance-val" class="font-bold text-accent-400">30</span>
                                 </div>
-                                <input type="range" id="wand-tolerance" min="1" max="100" value="30" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer">
-                                <p class="text-[9px] text-slate-500 leading-normal">Dica: Clique sobre o fundo ou cor da imagem para apagá-la.</p>
+                                <input type="range" id="wand-tolerance" min="1" max="100" value="30" class="w-full">
+                                <p class="text-[9px] text-slate-500">Clique no fundo para apagar por cor.</p>
                             </div>
 
                             <div id="tool-settings-brush" class="hidden bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-3">
@@ -138,36 +118,33 @@
                                     <button id="btn-brush-erase" class="py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Apagar</button>
                                     <button id="btn-brush-restore" class="py-1 rounded-md text-[10px] font-bold text-center text-slate-400">Restaurar</button>
                                 </div>
-                                
                                 <div class="space-y-1">
                                     <div class="flex items-center justify-between text-[10px] text-slate-300">
-                                        <span>Tamanho do Pincel:</span>
+                                        <span>Tamanho:</span>
                                         <span id="brush-size-val" class="font-bold text-accent-400">40px</span>
                                     </div>
-                                    <input type="range" id="brush-size" min="5" max="150" value="40" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer">
+                                    <input type="range" id="brush-size" min="5" max="150" value="40" class="w-full">
                                 </div>
-
                                 <div class="space-y-1">
                                     <div class="flex items-center justify-between text-[10px] text-slate-300">
-                                        <span>Dureza do Pincel:</span>
+                                        <span>Dureza:</span>
                                         <span id="brush-hardness-val" class="font-bold text-accent-400">80%</span>
                                     </div>
-                                    <input type="range" id="brush-hardness" min="0" max="100" value="80" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer">
+                                    <input type="range" id="brush-hardness" min="0" max="100" value="80" class="w-full">
                                 </div>
                             </div>
                         </div>
 
                         <hr class="border-slate-900">
 
-                        <!-- BACKGROUND COLOR -->
                         <div class="space-y-3">
-                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">3. Visualização do Fundo</span>
+                            <span class="tool-section-title">3. Fundo</span>
                             <div class="grid grid-cols-2 gap-2">
-                                <button id="btn-bg-transparent" class="active py-2 px-2 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5" disabled>
+                                <button id="btn-bg-transparent" class="tool-btn active py-2 px-2 rounded-xl border border-indigo-500/30 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5" disabled>
                                     <i class="fa-solid fa-border-none text-[10px]"></i> Transparente
                                 </button>
-                                <button id="btn-bg-color" class="py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5" disabled>
-                                    <input type="color" id="bg-color-picker" value="#ffffff" class="w-3.5 h-3.5 border-0 rounded cursor-pointer p-0 bg-transparent"> Cor de Fundo
+                                <button id="btn-bg-color" class="tool-btn py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5" disabled>
+                                    <input type="color" id="bg-color-picker" value="#ffffff" class="w-3.5 h-3.5 border-0 rounded cursor-pointer p-0 bg-transparent"> Cor
                                 </button>
                             </div>
                         </div>
@@ -175,467 +152,279 @@
                 </div>
             </div>
         `;
-
-        // Load listeners
         setupEventListeners();
     };
 
     function setupEventListeners() {
         const uploader = document.getElementById('file-uploader');
-        const uploadPlaceholder = document.getElementById('upload-placeholder');
+        const placeholder = document.getElementById('upload-placeholder');
         const workspace = document.getElementById('workspace-container');
 
-        // Drag & Drop
-        uploadPlaceholder.addEventListener('click', () => uploader.click());
-        uploader.addEventListener('change', handleFileSelect);
-
-        workspace.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            workspace.classList.add('border-accent-500/50', 'bg-accent-500/5');
+        setupDragDrop(placeholder, uploader, (file) => {
+            uploader.files = new FileList(); // reset
+            handleFile(file);
         });
-        workspace.addEventListener('dragleave', () => {
-            workspace.classList.remove('border-accent-500/50', 'bg-accent-500/5');
-        });
+        workspace.addEventListener('dragover', (e) => { e.preventDefault(); workspace.classList.add('border-accent-500/50'); });
+        workspace.addEventListener('dragleave', () => { workspace.classList.remove('border-accent-500/50'); });
         workspace.addEventListener('drop', (e) => {
-            e.preventDefault();
-            workspace.classList.remove('border-accent-500/50', 'bg-accent-500/5');
-            if (e.dataTransfer.files.length > 0) {
-                uploader.files = e.dataTransfer.files;
-                handleFileSelect({ target: uploader });
-            }
+            e.preventDefault(); workspace.classList.remove('border-accent-500/50');
+            if (e.dataTransfer.files[0]) handleFile(e.dataTransfer.files[0]);
         });
 
-        // Engine Select Labels
         const lblPeople = document.getElementById('lbl-engine-people');
         const lblObjects = document.getElementById('lbl-engine-objects');
-        document.querySelectorAll('input[name="ai-engine"]').forEach(radio => {
-            radio.addEventListener('change', (e) => {
-                if (e.target.value === 'mediapipe') {
-                    lblPeople.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white";
-                    lblObjects.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200";
-                } else {
-                    lblObjects.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white";
-                    lblPeople.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200";
-                }
+        document.querySelectorAll('input[name="ai-engine"]').forEach(r => {
+            r.addEventListener('change', (e) => {
+                const isPeople = e.target.value === 'mediapipe';
+                lblPeople.className = `engine-btn ${isPeople ? 'active' : ''} cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all ${isPeople ? '' : 'text-slate-400 hover:text-slate-200'}`;
+                lblObjects.className = `engine-btn ${!isPeople ? 'active' : ''} cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all ${!isPeople ? '' : 'text-slate-400 hover:text-slate-200'}`;
             });
         });
 
-        // Action Buttons
-        document.getElementById('btn-run-ai').addEventListener('click', runAiBackgroundRemoval);
+        document.getElementById('btn-run-ai').addEventListener('click', runAi);
         document.getElementById('btn-reset-mask').addEventListener('click', resetMask);
         document.getElementById('btn-download-result').addEventListener('click', downloadPNG);
-        document.getElementById('btn-show-split').addEventListener('click', toggleSplitScreen);
+        document.getElementById('btn-show-split').addEventListener('click', toggleSplit);
 
-        // Tool Modes Selection
         document.getElementById('btn-tool-pan').addEventListener('click', () => setToolMode('pan'));
         document.getElementById('btn-tool-wand').addEventListener('click', () => setToolMode('wand'));
         document.getElementById('btn-tool-brush').addEventListener('click', () => setToolMode('brush'));
 
-        // Wand settings
-        const wandToleranceInput = document.getElementById('wand-tolerance');
-        wandToleranceInput.addEventListener('input', (e) => {
+        document.getElementById('wand-tolerance').addEventListener('input', (e) => {
             state.magicWandTolerance = parseInt(e.target.value);
             document.getElementById('wand-tolerance-val').innerText = state.magicWandTolerance;
         });
-
-        // Brush settings
-        const brushSizeInput = document.getElementById('brush-size');
-        brushSizeInput.addEventListener('input', (e) => {
+        document.getElementById('brush-size').addEventListener('input', (e) => {
             state.brushSize = parseInt(e.target.value);
             document.getElementById('brush-size-val').innerText = `${state.brushSize}px`;
         });
-        const brushHardnessInput = document.getElementById('brush-hardness');
-        brushHardnessInput.addEventListener('input', (e) => {
+        document.getElementById('brush-hardness').addEventListener('input', (e) => {
             state.brushHardness = parseFloat(e.target.value) / 100;
             document.getElementById('brush-hardness-val').innerText = `${e.target.value}%`;
         });
         document.getElementById('btn-brush-erase').addEventListener('click', () => setBrushMode('erase'));
         document.getElementById('btn-brush-restore').addEventListener('click', () => setBrushMode('restore'));
 
-        // BG Visual Toggle
         const btnTrans = document.getElementById('btn-bg-transparent');
         const btnColor = document.getElementById('btn-bg-color');
-        const colorPicker = document.getElementById('bg-color-picker');
-
-        btnTrans.addEventListener('click', () => {
-            state.bgColorType = 'transparent';
-            btnTrans.className = "active py-2 px-2 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5";
-            btnColor.className = "py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5";
-            renderWorkspace();
-        });
-
-        btnColor.addEventListener('click', () => {
-            state.bgColorType = 'color';
-            btnColor.className = "active py-2 px-2 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5";
-            btnTrans.className = "py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5";
-            renderWorkspace();
-        });
-
-        colorPicker.addEventListener('input', (e) => {
+        btnTrans.addEventListener('click', () => { state.bgColorType = 'transparent'; updateBgBtns(); renderWorkspace(); });
+        btnColor.addEventListener('click', () => { state.bgColorType = 'color'; updateBgBtns(); renderWorkspace(); });
+        document.getElementById('bg-color-picker').addEventListener('input', (e) => {
             state.bgColorValue = e.target.value;
             if (state.bgColorType === 'color') renderWorkspace();
         });
 
-        // Canvas interactions
         const canvas = document.getElementById('canvas-bg-remover');
-        canvas.addEventListener('mousedown', canvasMouseDown);
-        canvas.addEventListener('mousemove', canvasMouseMove);
-        window.addEventListener('mouseup', canvasMouseUp);
-        canvas.addEventListener('wheel', canvasWheel);
+        canvas.addEventListener('mousedown', onCanvasDown);
+        canvas.addEventListener('mousemove', onCanvasMove);
+        window.addEventListener('mouseup', onCanvasUp);
+        canvas.addEventListener('wheel', onCanvasWheel, { passive: false });
     }
 
-    function handleFileSelect(e) {
-        const file = e.target.files[0];
-        if (!file) return;
+    function updateBgBtns() {
+        const btnTrans = document.getElementById('btn-bg-transparent');
+        const btnColor = document.getElementById('btn-bg-color');
+        if (state.bgColorType === 'transparent') {
+            btnTrans.className = "tool-btn active py-2 px-2 rounded-xl border border-indigo-500/30 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5";
+            btnColor.className = "tool-btn py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5";
+        } else {
+            btnColor.className = "tool-btn active py-2 px-2 rounded-xl border border-indigo-500/30 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5";
+            btnTrans.className = "tool-btn py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5";
+        }
+    }
+
+    function handleFile(file) {
         state.currentFile = file;
-
-        showInternalLoader('Carregando...', 'Renderizando imagem selecionada no espaço de trabalho.');
-
+        showLoader('Carregando...', 'Renderizando imagem.');
         const reader = new FileReader();
-        reader.onload = function(event) {
+        reader.onload = (ev) => {
             const img = new Image();
-            img.onload = function() {
+            img.onload = () => {
                 state.originalImage = img;
-                
-                // Initialize Canvases
                 state.workspaceCanvas = document.getElementById('canvas-bg-remover');
                 state.workspaceCtx = state.workspaceCanvas.getContext('2d');
 
-                // Mask Canvas (contains user alpha mask)
                 state.maskCanvas = document.createElement('canvas');
                 state.maskCanvas.width = img.naturalWidth;
                 state.maskCanvas.height = img.naturalHeight;
                 state.maskCtx = state.maskCanvas.getContext('2d');
-
-                // Initialize all to opaque white
                 state.maskCtx.fillStyle = '#ffffff';
                 state.maskCtx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
 
-                // Setup layout dims
                 state.workspaceCanvas.width = img.naturalWidth;
                 state.workspaceCanvas.height = img.naturalHeight;
-                
-                // Override CSS sizes to prevent browser double-scaling!
-                state.workspaceCanvas.style.width = `${img.naturalWidth}px`;
-                state.workspaceCanvas.style.height = `${img.naturalHeight}px`;
-                state.workspaceCanvas.style.maxWidth = 'none';
-                state.workspaceCanvas.style.maxHeight = 'none';
-                state.workspaceCanvas.style.transformOrigin = '0 0';
                 state.workspaceCanvas.classList.remove('hidden');
 
                 document.getElementById('upload-placeholder').classList.add('hidden');
-                
-                // Reset zoom and offset
-                resetZoomOffset();
+                fitCanvasInContainer(state.workspaceCanvas, document.getElementById('workspace-container'));
+                state.zoomScale = 1.0;
+                state.zoomOffset = { x: 0, y: 0 };
 
-                // Enable buttons
-                document.getElementById('btn-run-ai').removeAttribute('disabled');
-                document.getElementById('btn-reset-mask').removeAttribute('disabled');
-                document.getElementById('btn-download-result').removeAttribute('disabled');
-                document.getElementById('btn-show-split').removeAttribute('disabled');
-                document.getElementById('btn-tool-pan').removeAttribute('disabled');
-                document.getElementById('btn-tool-wand').removeAttribute('disabled');
-                document.getElementById('btn-tool-brush').removeAttribute('disabled');
-                document.getElementById('btn-bg-transparent').removeAttribute('disabled');
-                document.getElementById('btn-bg-color').removeAttribute('disabled');
-
-                hideInternalLoader();
+                enableButtons();
+                hideLoader();
                 renderWorkspace();
             };
-            img.src = event.target.result;
+            img.src = ev.target.result;
         };
         reader.readAsDataURL(file);
     }
 
-    function resetZoomOffset() {
-        if (!state.originalImage) return;
-        const container = document.getElementById('workspace-container');
-        const contW = container.clientWidth - 32;
-        const contH = container.clientHeight - 32;
-        const imgW = state.originalImage.naturalWidth;
-        const imgH = state.originalImage.naturalHeight;
-
-        state.zoomScale = Math.min(contW / imgW, contH / imgH, 1.0);
-        state.zoomOffset = {
-            x: (contW + 32 - imgW * state.zoomScale) / 2,
-            y: (contH + 32 - imgH * state.zoomScale) / 2
-        };
-        updateCanvasTransforms();
+    function enableButtons() {
+        ['btn-run-ai', 'btn-reset-mask', 'btn-download-result', 'btn-show-split', 'btn-tool-pan', 'btn-tool-wand', 'btn-tool-brush', 'btn-bg-transparent', 'btn-bg-color'].forEach(id => {
+            document.getElementById(id).removeAttribute('disabled');
+        });
     }
 
     function setToolMode(mode) {
         state.activeAction = mode;
         document.querySelectorAll('.tool-btn').forEach(btn => {
-            btn.className = "tool-btn p-2.5 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 text-xs text-slate-400 font-medium transition flex flex-col items-center gap-1.5";
+            if (btn.id && btn.id.startsWith('btn-tool-')) {
+                btn.className = "tool-btn p-2.5 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 text-xs text-slate-400 font-medium transition flex flex-col items-center gap-1.5";
+            }
         });
-        document.getElementById(`btn-tool-${mode}`).className = "tool-btn active p-2.5 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 font-medium transition flex flex-col items-center gap-1.5";
-
+        document.getElementById(`btn-tool-${mode}`).className = "tool-btn active p-2.5 rounded-xl border border-indigo-500/30 bg-indigo-950/20 text-xs text-indigo-300 font-medium transition flex flex-col items-center gap-1.5";
         document.getElementById('tool-settings-wand').classList.add('hidden');
         document.getElementById('tool-settings-brush').classList.add('hidden');
-
-        if (mode === 'wand') {
-            document.getElementById('tool-settings-wand').classList.remove('hidden');
-            state.workspaceCanvas.style.cursor = 'crosshair';
-        } else if (mode === 'brush') {
-            document.getElementById('tool-settings-brush').classList.remove('hidden');
-            state.workspaceCanvas.style.cursor = 'crosshair';
-        } else {
-            state.workspaceCanvas.style.cursor = 'grab';
-        }
+        if (mode === 'wand') { document.getElementById('tool-settings-wand').classList.remove('hidden'); state.workspaceCanvas.style.cursor = 'crosshair'; }
+        else if (mode === 'brush') { document.getElementById('tool-settings-brush').classList.remove('hidden'); state.workspaceCanvas.style.cursor = 'crosshair'; }
+        else { state.workspaceCanvas.style.cursor = 'grab'; }
     }
 
     function setBrushMode(mode) {
         state.brushMode = mode;
-        const btnErase = document.getElementById('btn-brush-erase');
-        const btnRestore = document.getElementById('btn-brush-restore');
-
+        const btnE = document.getElementById('btn-brush-erase');
+        const btnR = document.getElementById('btn-brush-restore');
         if (mode === 'erase') {
-            btnErase.className = "py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
-            btnRestore.className = "py-1 rounded-md text-[10px] font-bold text-center text-slate-400";
+            btnE.className = "py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
+            btnR.className = "py-1 rounded-md text-[10px] font-bold text-center text-slate-400";
         } else {
-            btnRestore.className = "py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
-            btnErase.className = "py-1 rounded-md text-[10px] font-bold text-center text-slate-400";
+            btnR.className = "py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
+            btnE.className = "py-1 rounded-md text-[10px] font-bold text-center text-slate-400";
         }
     }
 
     function renderWorkspace() {
         if (!state.originalImage || !state.workspaceCanvas) return;
-
         const canvas = state.workspaceCanvas;
         const ctx = state.workspaceCtx;
         const w = canvas.width;
         const h = canvas.height;
-
         ctx.clearRect(0, 0, w, h);
 
-        // Temp canvas to construct current state
-        const tempCanvas = document.createElement('canvas');
-        tempCanvas.width = w;
-        tempCanvas.height = h;
-        const tempCtx = tempCanvas.getContext('2d');
+        const temp = document.createElement('canvas');
+        temp.width = w; temp.height = h;
+        const tCtx = temp.getContext('2d');
+        tCtx.drawImage(state.originalImage, 0, 0);
+        tCtx.globalCompositeOperation = 'destination-in';
+        tCtx.drawImage(state.maskCanvas, 0, 0);
+        tCtx.globalCompositeOperation = 'source-over';
 
-        // Draw original
-        tempCtx.drawImage(state.originalImage, 0, 0);
+        if (state.bgColorType === 'transparent') { drawCheckerboard(ctx, w, h); }
+        else { ctx.fillStyle = state.bgColorValue; ctx.fillRect(0, 0, w, h); }
 
-        // Apply alpha mask
-        tempCtx.globalCompositeOperation = 'destination-in';
-        tempCtx.drawImage(state.maskCanvas, 0, 0);
-        tempCtx.globalCompositeOperation = 'source-over';
-
-        // Draw Checkerboard or Background Color on output
-        if (state.bgColorType === 'transparent') {
-            // Draw transparent checkers
-            drawCheckerboard(ctx, w, h);
-        } else {
-            ctx.fillStyle = state.bgColorValue;
-            ctx.fillRect(0, 0, w, h);
-        }
-
-        // Draw current result
         if (state.showSplit) {
-            // Split screen logic
-            const splitX = w * state.splitOffset;
-
-            // Draw original on left side
+            const splitX = Math.round(w * state.splitOffset);
             ctx.drawImage(state.originalImage, 0, 0, splitX, h, 0, 0, splitX, h);
-
-            // Draw masked result on right side
-            ctx.drawImage(tempCanvas, splitX, 0, w - splitX, h, splitX, 0, w - splitX, h);
-
-            // Split line
-            ctx.strokeStyle = '#7c3aed';
-            ctx.lineWidth = 4 / state.zoomScale;
-            ctx.beginPath();
-            ctx.moveTo(splitX, 0);
-            ctx.lineTo(splitX, h);
-            ctx.stroke();
-
-            // Handle handle circle
-            ctx.fillStyle = '#7c3aed';
-            ctx.beginPath();
-            ctx.arc(splitX, h / 2, 16 / state.zoomScale, 0, Math.PI * 2);
-            ctx.fill();
-
-            ctx.fillStyle = '#ffffff';
-            ctx.beginPath();
-            ctx.arc(splitX, h / 2, 6 / state.zoomScale, 0, Math.PI * 2);
-            ctx.fill();
+            ctx.drawImage(temp, splitX, 0, w - splitX, h, splitX, 0, w - splitX, h);
+            ctx.strokeStyle = '#7c3aed'; ctx.lineWidth = 3;
+            ctx.beginPath(); ctx.moveTo(splitX, 0); ctx.lineTo(splitX, h); ctx.stroke();
+            ctx.fillStyle = '#7c3aed'; ctx.beginPath(); ctx.arc(splitX, h / 2, 10, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#fff'; ctx.beginPath(); ctx.arc(splitX, h / 2, 4, 0, Math.PI * 2); ctx.fill();
         } else {
-            // Full masked image
-            ctx.drawImage(tempCanvas, 0, 0);
+            ctx.drawImage(temp, 0, 0);
         }
     }
 
-    function drawCheckerboard(ctx, w, h) {
-        const size = 15;
-        const cols = Math.ceil(w / size);
-        const rows = Math.ceil(h / size);
-        for (let r = 0; r < rows; r++) {
-            for (let c = 0; c < cols; c++) {
-                ctx.fillStyle = (r + c) % 2 === 0 ? '#1e293b' : '#0f172a';
-                ctx.fillRect(c * size, r * size, size, size);
-            }
-        }
-    }
-
-    function toggleSplitScreen() {
+    function toggleSplit() {
         state.showSplit = !state.showSplit;
         const btn = document.getElementById('btn-show-split');
-        if (state.showSplit) {
-            btn.className = "px-3 py-1.5 rounded-lg border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center gap-1.5";
-        } else {
-            btn.className = "px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/30 text-xs text-slate-300 hover:bg-slate-800 transition flex items-center gap-1.5";
-        }
+        btn.className = state.showSplit
+            ? "px-3 py-1.5 rounded-lg border border-indigo-500/30 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center gap-1.5"
+            : "px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/30 text-xs text-slate-300 hover:bg-slate-800 transition flex items-center gap-1.5";
         renderWorkspace();
     }
 
-    // AI ENGINES RUNNERS
-    function runAiBackgroundRemoval() {
+    // AI
+    function runAi() {
         if (!state.originalImage) return;
-
         const engine = document.querySelector('input[name="ai-engine"]:checked').value;
-        if (engine === 'mediapipe') {
-            runMediaPipe();
-        } else {
-            runImgly();
-        }
+        if (engine === 'mediapipe') runMediaPipe();
+        else runImgly();
     }
 
     function runMediaPipe() {
-        showInternalLoader('MediaPipe AI', 'Isolando silhueta humana no WebGL...', 30);
+        showLoader('MediaPipe AI', 'Isolando silhueta...', 30);
         try {
-            const selfieSegmentation = new SelfieSegmentation({
-                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-            });
-
-            selfieSegmentation.setOptions({
-                modelSelection: 1 // General / Landscape
-            });
-
-            selfieSegmentation.onResults((results) => {
+            const seg = new SelfieSegmentation({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
+            seg.setOptions({ modelSelection: 1 });
+            seg.onResults((results) => {
                 try {
                     const w = state.originalImage.naturalWidth;
                     const h = state.originalImage.naturalHeight;
-
                     state.maskCtx.clearRect(0, 0, w, h);
                     state.maskCtx.drawImage(results.segmentationMask, 0, 0, w, h);
-
                     const imgData = state.maskCtx.getImageData(0, 0, w, h);
-                    const data = imgData.data;
-                    for (let i = 0; i < data.length; i += 4) {
-                        const prob = data[i];
-                        const val = prob > 128 ? 255 : 0;
-                        data[i] = 255;
-                        data[i+1] = 255;
-                        data[i+2] = 255;
-                        data[i+3] = val; // Apply alpha
+                    const d = imgData.data;
+                    for (let i = 0; i < d.length; i += 4) {
+                        const v = d[i] > 128 ? 255 : 0;
+                        d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = v;
                     }
                     state.maskCtx.putImageData(imgData, 0, 0);
-
                     cacheAiMask();
-                    hideInternalLoader();
-                    renderWorkspace();
-                    if (typeof showNotification === 'function') showNotification("Fundo de pessoa removido com sucesso!");
-                } catch (e) {
-                    console.error(e);
-                    hideInternalLoader();
-                    if (typeof showNotification === 'function') showNotification("Erro ao processar máscara da IA.");
-                }
+                    hideLoader(); renderWorkspace();
+                    showNotification("Fundo de pessoa removido!");
+                } catch (e) { hideLoader(); showNotification("Erro ao processar máscara."); }
             });
-
             setTimeout(() => {
-                selfieSegmentation.send({ image: state.originalImage })
-                    .catch(err => {
-                        console.error(err);
-                        hideInternalLoader();
-                        if (typeof showNotification === 'function') showNotification("MediaPipe falhou. Experimente o motor de Objetos.");
-                    });
+                seg.send({ image: state.originalImage }).catch(() => {
+                    hideLoader(); showNotification("MediaPipe falhou. Use o motor Objetos.");
+                });
             }, 300);
-
-        } catch (e) {
-            console.error(e);
-            hideInternalLoader();
-            if (typeof showNotification === 'function') showNotification("Não foi possível iniciar o MediaPipe.");
-        }
+        } catch (e) { hideLoader(); showNotification("Não foi possível iniciar o MediaPipe."); }
     }
 
     async function runImgly() {
         if (!window.imglyRemoveBackground) {
-            showInternalLoader('Iniciando Motor', 'Carregando arquivos da IA de objetos (IMG.LY)...', 10);
-            
-            let check = setInterval(() => {
-                if (window.imglyRemoveBackground) {
-                    clearInterval(check);
-                    hideInternalLoader();
-                    runImglyRemovalLogic();
-                }
-            }, 1000);
-
-            setTimeout(() => {
-                clearInterval(check);
-                if (!window.imglyRemoveBackground) {
-                    hideInternalLoader();
-                    if (typeof showNotification === 'function') showNotification("A biblioteca IMG.LY demorou demais para responder.");
-                }
-            }, 20000);
-            return;
+            showLoader('Carregando Motor', 'Iniciando IMG.LY...', 10);
+            await new Promise((resolve) => {
+                const onReady = () => { resolve(); document.removeEventListener('imgly-ready', onReady); };
+                document.addEventListener('imgly-ready', onReady);
+                setTimeout(() => { resolve(); document.removeEventListener('imgly-ready', onReady); }, 25000);
+            });
+            if (!window.imglyRemoveBackground) {
+                hideLoader(); showNotification("IMG.LY demorou demais."); return;
+            }
         }
-
-        runImglyRemovalLogic();
-    }
-
-    async function runImglyRemovalLogic() {
-        showInternalLoader('IMG.LY AI', 'Isolando objetos gerais... (Isso pode levar de 5 a 15 segundos)', 10);
+        showLoader('IMG.LY AI', 'Isolando objetos...', 10);
         try {
             const blob = await window.imglyRemoveBackground(state.currentFile, {
-                model: 'isnet_quint8', // Faster model
-                device: 'cpu', // Safer fallback inside sandbox
-                proxyToWorker: false, // Avoid worker sandbox errors
+                model: 'isnet_quint8', device: 'cpu', proxyToWorker: false,
                 progress: (key, current, total) => {
-                    const pct = Math.round((current / total) * 100);
-                    updateLoaderProgress(pct, `Fazendo download do modelo: ${pct}%`);
+                    updateLoaderProgress(Math.round((current / total) * 90), `Download modelo: ${Math.round((current/total)*100)}%`);
                 }
             });
-
-            updateLoaderProgress(95, "Finalizando processamento...");
+            updateLoaderProgress(95, "Finalizando...");
             const url = URL.createObjectURL(blob);
             const resImg = new Image();
-            resImg.onload = function() {
+            resImg.onload = () => {
                 const w = state.originalImage.naturalWidth;
                 const h = state.originalImage.naturalHeight;
-
-                const temp = document.createElement('canvas');
-                temp.width = w;
-                temp.height = h;
-                const tempCtx = temp.getContext('2d');
-                tempCtx.drawImage(resImg, 0, 0, w, h);
-
-                const imgData = tempCtx.getImageData(0, 0, w, h);
-                const data = imgData.data;
-
+                const tmp = document.createElement('canvas');
+                tmp.width = w; tmp.height = h;
+                tmp.getContext('2d').drawImage(resImg, 0, 0, w, h);
+                const imgData = tmp.getContext('2d').getImageData(0, 0, w, h);
+                const d = imgData.data;
                 state.maskCtx.clearRect(0, 0, w, h);
-                for (let i = 0; i < data.length; i += 4) {
-                    const alpha = data[i+3];
-                    const val = alpha > 10 ? 255 : 0;
-                    data[i] = 255;
-                    data[i+1] = 255;
-                    data[i+2] = 255;
-                    data[i+3] = val;
+                for (let i = 0; i < d.length; i += 4) {
+                    const v = d[i+3] > 10 ? 255 : 0;
+                    d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = v;
                 }
                 state.maskCtx.putImageData(imgData, 0, 0);
-
-                cacheAiMask();
-                hideInternalLoader();
-                renderWorkspace();
-                if (typeof showNotification === 'function') showNotification("Fundo de objeto removido com sucesso!");
+                cacheAiMask(); hideLoader(); renderWorkspace();
+                showNotification("Fundo de objeto removido!");
             };
             resImg.src = url;
-
-        } catch (err) {
-            console.error(err);
-            hideInternalLoader();
-            if (typeof showNotification === 'function') showNotification("Falha no motor de Objetos.");
-        }
+        } catch (e) { hideLoader(); showNotification("Falha no motor de Objetos."); }
     }
 
     function cacheAiMask() {
@@ -649,257 +438,157 @@
         if (!state.originalImage) return;
         state.maskCtx.fillStyle = '#ffffff';
         state.maskCtx.fillRect(0, 0, state.originalImage.naturalWidth, state.originalImage.naturalHeight);
-        renderWorkspace();
-        if (typeof showNotification === 'function') showNotification("Máscara restaurada para o original.");
+        renderWorkspace(); showNotification("Máscara restaurada.");
     }
 
-    // INTERACTIVE MOUSE HANDLERS
-    function canvasMouseDown(e) {
+    // Canvas mouse
+    function onCanvasDown(e) {
         if (!state.originalImage) return;
-
-        const rect = state.workspaceCanvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
+        const coords = canvasToImageCoords(state.workspaceCanvas, e.clientX, e.clientY);
         if (state.activeAction === 'pan') {
             state.isPanning = true;
             state.lastMousePos = { x: e.clientX, y: e.clientY };
             state.workspaceCanvas.style.cursor = 'grabbing';
         } else if (state.activeAction === 'wand') {
-            applyMagicWand(mouseX, mouseY);
+            applyMagicWand(coords.x, coords.y);
         } else if (state.activeAction === 'brush') {
             state.isDrawing = true;
-            drawBrushStroke(mouseX, mouseY, true);
+            paintBrush(coords.x, coords.y, true);
         }
     }
 
-    function canvasMouseMove(e) {
+    function onCanvasMove(e) {
         if (!state.originalImage) return;
-
-        const rect = state.workspaceCanvas.getBoundingClientRect();
-        const mouseX = e.clientX - rect.left;
-        const mouseY = e.clientY - rect.top;
-
+        const coords = canvasToImageCoords(state.workspaceCanvas, e.clientX, e.clientY);
         if (state.isPanning) {
             const dx = e.clientX - state.lastMousePos.x;
             const dy = e.clientY - state.lastMousePos.y;
-            state.zoomOffset.x += dx;
-            state.zoomOffset.y += dy;
+            const rect = state.workspaceCanvas.getBoundingClientRect();
+            const scale = rect.width / state.workspaceCanvas.width;
+            state.zoomOffset.x += dx / scale;
+            state.zoomOffset.y += dy / scale;
             state.lastMousePos = { x: e.clientX, y: e.clientY };
-            updateCanvasTransforms();
+            updateTransform();
         } else if (state.isDrawing && state.activeAction === 'brush') {
-            drawBrushStroke(mouseX, mouseY, false);
-        } else if (state.showSplit && state.activeAction === 'pan') {
-            // Handle split slider drag
-            const pct = mouseX / rect.width;
-            state.splitOffset = Math.max(0, Math.min(1, pct));
-            renderWorkspace();
+            paintBrush(coords.x, coords.y, false);
         }
     }
 
-    function canvasMouseUp() {
-        state.isPanning = false;
-        state.isDrawing = false;
-        state.lastImgPos = null;
-        if (state.activeAction === 'pan') {
-            state.workspaceCanvas.style.cursor = 'grab';
-        }
+    function onCanvasUp() {
+        state.isPanning = false; state.isDrawing = false; state.lastImgPos = null;
+        if (state.activeAction === 'pan') state.workspaceCanvas.style.cursor = 'grab';
     }
 
-    function canvasWheel(e) {
+    function onCanvasWheel(e) {
         e.preventDefault();
         if (!state.originalImage) return;
-
-        const zoomFactor = 1.1;
-        if (e.deltaY < 0) {
-            state.zoomScale *= zoomFactor;
-        } else {
-            state.zoomScale /= zoomFactor;
-        }
-        state.zoomScale = Math.max(0.1, Math.min(10.0, state.zoomScale));
-        updateCanvasTransforms();
+        const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
+        state.zoomScale = Math.max(0.1, Math.min(10.0, state.zoomScale * factor));
+        updateTransform();
     }
 
-    function updateCanvasTransforms() {
-        const canvas = state.workspaceCanvas;
-        if (!canvas) return;
-        canvas.style.transform = `translate(${state.zoomOffset.x}px, ${state.zoomOffset.y}px) scale(${state.zoomScale})`;
+    function updateTransform() {
+        const c = state.workspaceCanvas;
+        if (!c) return;
+        const container = document.getElementById('workspace-container');
+        const baseScale = Math.min((container.clientWidth - 32) / c.width, (container.clientHeight - 32) / c.height, 1.0);
+        const ox = (container.clientWidth - c.width * baseScale * state.zoomScale) / 2 + state.zoomOffset.x;
+        const oy = (container.clientHeight - c.height * baseScale * state.zoomScale) / 2 + state.zoomOffset.y;
+        c.style.transform = `translate(${ox}px, ${oy}px) scale(${baseScale * state.zoomScale})`;
     }
 
-    // BRUSH PAINTING
-    function drawBrushStroke(x, y, isStart) {
-        const rect = state.workspaceCanvas.getBoundingClientRect();
-        
-        // Convert screen canvas coordinate to raw image coordinate
-        const scaleX = state.originalImage.naturalWidth / rect.width;
-        const scaleY = state.originalImage.naturalHeight / rect.height;
-        const imgX = x * scaleX;
-        const imgY = y * scaleY;
-
+    function paintBrush(x, y, isStart) {
         const ctx = state.maskCtx;
         ctx.save();
-        
-        ctx.lineWidth = state.brushSize;
-        ctx.lineCap = 'round';
-        ctx.lineJoin = 'round';
-
+        ctx.lineWidth = state.brushSize; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
         if (state.brushMode === 'erase') {
-            ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
-            ctx.fillStyle = 'rgba(0, 0, 0, 1)';
+            ctx.strokeStyle = 'rgba(0,0,0,1)'; ctx.fillStyle = 'rgba(0,0,0,1)';
             ctx.globalCompositeOperation = 'destination-out';
         } else {
-            ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
-            ctx.fillStyle = 'rgba(255, 255, 255, 1)';
+            ctx.strokeStyle = 'rgba(255,255,255,1)'; ctx.fillStyle = 'rgba(255,255,255,1)';
             ctx.globalCompositeOperation = 'source-over';
         }
-
-        if (isStart) {
-            ctx.beginPath();
-            ctx.arc(imgX, imgY, state.brushSize / 2, 0, Math.PI * 2);
-            ctx.fill();
-        } else if (state.lastImgPos) {
-            ctx.beginPath();
-            ctx.moveTo(state.lastImgPos.x, state.lastImgPos.y);
-            ctx.lineTo(imgX, imgY);
-            ctx.stroke();
-        }
-
+        if (isStart) { ctx.beginPath(); ctx.arc(x, y, state.brushSize / 2, 0, Math.PI * 2); ctx.fill(); }
+        else if (state.lastImgPos) { ctx.beginPath(); ctx.moveTo(state.lastImgPos.x, state.lastImgPos.y); ctx.lineTo(x, y); ctx.stroke(); }
         ctx.restore();
-        state.lastImgPos = { x: imgX, y: imgY };
+        state.lastImgPos = { x, y };
         renderWorkspace();
     }
 
-    // FLOOD FILL WAND
-    function applyMagicWand(clickX, clickY) {
-        const rect = state.workspaceCanvas.getBoundingClientRect();
-        const scaleX = state.originalImage.naturalWidth / rect.width;
-        const scaleY = state.originalImage.naturalHeight / rect.height;
-        const rawX = Math.round(clickX * scaleX);
-        const rawY = Math.round(clickY * scaleY);
-
+    function applyMagicWand(rawX, rawY) {
         const w = state.originalImage.naturalWidth;
         const h = state.originalImage.naturalHeight;
+        const cx = Math.round(rawX); const cy = Math.round(rawY);
+        if (cx < 0 || cx >= w || cy < 0 || cy >= h) return;
 
-        if (rawX < 0 || rawX >= w || rawY < 0 || rawY >= h) return;
-
-        showInternalLoader('Varinha Mágica', 'Calculando tolerância de cor local...', 20);
-
+        showLoader('Varinha Mágica', 'Calculando tolerância...', 20);
         setTimeout(() => {
-            const temp = document.createElement('canvas');
-            temp.width = w;
-            temp.height = h;
-            const tempCtx = temp.getContext('2d');
-            tempCtx.drawImage(state.originalImage, 0, 0);
-            const pixels = tempCtx.getImageData(0, 0, w, h).data;
-
-            const idx = (rawY * w + rawX) * 4;
-            const targetR = pixels[idx];
-            const targetG = pixels[idx+1];
-            const targetB = pixels[idx+2];
-
+            const tmp = document.createElement('canvas');
+            tmp.width = w; tmp.height = h;
+            tmp.getContext('2d').drawImage(state.originalImage, 0, 0);
+            const pixels = tmp.getContext('2d').getImageData(0, 0, w, h).data;
+            const idx = (cy * w + cx) * 4;
+            const tR = pixels[idx], tG = pixels[idx+1], tB = pixels[idx+2];
             const visited = new Uint8Array(w * h);
-            const queue = [rawX, rawY];
-            let head = 0;
-
+            const queue = [cx, cy]; let head = 0;
             const maskData = state.maskCtx.getImageData(0, 0, w, h);
-            const maskPixels = maskData.data;
+            const mPx = maskData.data;
             const tolSq = state.magicWandTolerance * state.magicWandTolerance;
+            const dirs = [0,-1,0,1,-1,0,1,0];
 
             while (head < queue.length) {
-                const cx = queue[head++];
-                const cy = queue[head++];
-
-                const offset = cy * w + cx;
-                if (visited[offset]) continue;
-                visited[offset] = 1;
-
-                const mIdx = offset * 4;
-                maskPixels[mIdx] = 0;
-                maskPixels[mIdx+1] = 0;
-                maskPixels[mIdx+2] = 0;
-                maskPixels[mIdx+3] = 0; // Translucency
-
-                const dirs = [0, -1, 0, 1, -1, 0, 1, 0];
+                const px = queue[head++], py = queue[head++];
+                const off = py * w + px;
+                if (visited[off]) continue;
+                visited[off] = 1;
+                const mIdx = off * 4;
+                mPx[mIdx] = 0; mPx[mIdx+1] = 0; mPx[mIdx+2] = 0; mPx[mIdx+3] = 0;
                 for (let d = 0; d < 8; d += 2) {
-                    const nx = cx + dirs[d];
-                    const ny = cy + dirs[d+1];
-
+                    const nx = px + dirs[d], ny = py + dirs[d+1];
                     if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
-                        const nOffset = ny * w + nx;
-                        if (!visited[nOffset]) {
-                            const nIdx = nOffset * 4;
-                            const dr = pixels[nIdx] - targetR;
-                            const dg = pixels[nIdx+1] - targetG;
-                            const db = pixels[nIdx+2] - targetB;
-                            const distSq = dr*dr + dg*dg + db*db;
-
-                            if (distSq <= tolSq) {
-                                queue.push(nx, ny);
-                            }
+                        const nOff = ny * w + nx;
+                        if (!visited[nOff]) {
+                            const nIdx = nOff * 4;
+                            const dr = pixels[nIdx] - tR, dg = pixels[nIdx+1] - tG, db = pixels[nIdx+2] - tB;
+                            if (dr*dr + dg*dg + db*db <= tolSq) queue.push(nx, ny);
                         }
                     }
                 }
             }
-
             state.maskCtx.putImageData(maskData, 0, 0);
-            hideInternalLoader();
-            renderWorkspace();
+            hideLoader(); renderWorkspace();
         }, 100);
     }
 
-    // EXPORT AND CONVERT
     function downloadPNG() {
         if (!state.originalImage) return;
-
         const w = state.originalImage.naturalWidth;
         const h = state.originalImage.naturalHeight;
-
-        const outCanvas = document.createElement('canvas');
-        outCanvas.width = w;
-        outCanvas.height = h;
-        const outCtx = outCanvas.getContext('2d');
-
-        // Draw opaque background color if color is active
-        if (state.bgColorType === 'color') {
-            outCtx.fillStyle = state.bgColorValue;
-            outCtx.fillRect(0, 0, w, h);
-        }
-
-        // Composite original with alpha mask
-        const temp = document.createElement('canvas');
-        temp.width = w;
-        temp.height = h;
-        const tempCtx = temp.getContext('2d');
-        tempCtx.drawImage(state.originalImage, 0, 0);
-        tempCtx.globalCompositeOperation = 'destination-in';
-        tempCtx.drawImage(state.maskCanvas, 0, 0);
-
-        outCtx.drawImage(temp, 0, 0);
-
-        // Download
-        const link = document.createElement('a');
-        link.download = `fundozero_${Date.now()}.png`;
-        link.href = outCanvas.toDataURL('image/png');
-        link.click();
+        const out = document.createElement('canvas');
+        out.width = w; out.height = h;
+        const ctx = out.getContext('2d');
+        if (state.bgColorType === 'color') { ctx.fillStyle = state.bgColorValue; ctx.fillRect(0, 0, w, h); }
+        const tmp = document.createElement('canvas');
+        tmp.width = w; tmp.height = h;
+        const tCtx = tmp.getContext('2d');
+        tCtx.drawImage(state.originalImage, 0, 0);
+        tCtx.globalCompositeOperation = 'destination-in';
+        tCtx.drawImage(state.maskCanvas, 0, 0);
+        ctx.drawImage(tmp, 0, 0);
+        downloadCanvasAsPNG(out, `fundozero_${Date.now()}.png`);
     }
 
-    // INTERNAL PROGRESS LOADER
-    function showInternalLoader(title, desc, progress = 0) {
+    function showLoader(title, desc, pct = 0) {
         document.getElementById('loader-title').innerText = title;
         document.getElementById('loader-desc').innerText = desc;
-        updateLoaderProgress(progress);
-        document.getElementById('internal-loader').className = "absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-3xl";
+        updateLoaderProgress(pct);
+        document.getElementById('internal-loader').classList.remove('hidden');
     }
 
-    function updateLoaderProgress(pct, newDesc = null) {
+    function updateLoaderProgress(pct, desc) {
         document.getElementById('loader-progress').style.width = `${pct}%`;
-        if (newDesc) {
-            document.getElementById('loader-desc').innerText = newDesc;
-        }
+        if (desc) document.getElementById('loader-desc').innerText = desc;
     }
 
-    function hideInternalLoader() {
-        document.getElementById('internal-loader').className = "hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-3xl";
-    }
-
+    function hideLoader() { document.getElementById('internal-loader').classList.add('hidden'); }
 })();
