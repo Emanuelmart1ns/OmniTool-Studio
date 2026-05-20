@@ -306,14 +306,20 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
                     referenceType: "REFERENCE_TYPE_RAW",
                     referenceId: 1,
                     referenceImage: {
-                        bytesBase64Encoded: originalBase64
+                        image: {
+                            mimeType: "image/png",
+                            bytesBase64Encoded: originalBase64
+                        }
                     }
                 },
                 {
                     referenceType: "REFERENCE_TYPE_MASK",
                     referenceId: 2,
                     referenceImage: {
-                        bytesBase64Encoded: maskBase64
+                        image: {
+                            mimeType: "image/png",
+                            bytesBase64Encoded: maskBase64
+                        }
                     }
                 }
             ]

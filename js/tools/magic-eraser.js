@@ -315,9 +315,9 @@
     function buildAiInpaintingPrompt() {
         const basePrompt = state.aiPrompt.trim();
         if (basePrompt) {
-            return `Remove the painted object and fill the background with: ${basePrompt}. Keep it seamless, matching the surrounding textures, colors, and lighting.`;
+            return `In the image [1], remove the object marked by the mask [2] and fill it with: ${basePrompt}. Keep it seamless, matching the surrounding textures, colors, and lighting.`;
         }
-        return 'Remove the painted object and reconstruct the background naturally to match the rest of the scene.';
+        return 'In the image [1], remove the object marked by the mask [2] and reconstruct the background naturally to match the rest of the scene.';
     }
 
     async function runAiInpainting() {
