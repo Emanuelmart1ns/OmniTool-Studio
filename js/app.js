@@ -336,12 +336,20 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
         if (retries <= 0) break;
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${apiKey}`;
         try {
+            console.log(`Enviando requisição Imagen para o modelo ${model}...`);
+            console.log("Payload enviado:", {
+                prompt: payload.instances[0].prompt,
+                parameters: payload.parameters,
+                originalLength: originalBase64.length,
+                maskLength: maskBase64.length
+            });
             const res = await fetch(url, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(payload)
             });
             const data = await res.json();
+            console.log(`Resposta recebida do modelo ${model}:`, data);
             if (!res.ok) {
                 const errMsg = data?.error?.message || `Erro HTTP ${res.status}`;
                 lastError = errMsg;
@@ -354,6 +362,7 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
                 continue;
             }
             if (data.predictions && data.predictions.length > 0 && data.predictions[0].bytesBase64Encoded) {
+                console.log("Imagem gerada com sucesso!");
                 return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
             }
             retries -= 1;
