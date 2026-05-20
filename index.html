@@ -1,0 +1,207 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OmniTool Studio | Ferramentas Criativas Inteligentes</title>
+    <meta name="description" content="Acesse ferramentas online gratuitas de edição de imagem, compressão, QR codes e muito mais. Processamento 100% local e seguro.">
+    
+    <!-- Google Fonts - Outfit & Inter -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        display: ['Outfit', 'sans-serif'],
+                    },
+                    colors: {
+                        slate: {
+                            950: '#070a13',
+                        },
+                        accent: {
+                            50: '#f5f3ff',
+                            100: '#ede9fe',
+                            500: '#7c3aed',
+                            600: '#6d28d9',
+                            700: '#5b21b6',
+                            900: '#3b0764',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- External Tool Libraries via CDN -->
+    <!-- MediaPipe Selfie Segmentation (Background Remover) -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+    <!-- QRious (QR Code Generator) -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
+    <!-- Html5Qrcode (QR Code Scanner) -->
+    <script src="https://unpkg.com/html5-qrcode" crossorigin="anonymous"></script>
+
+    <!-- Estilos Customizados -->
+    <link rel="stylesheet" href="css/styles.css">
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans antialiased min-h-screen flex flex-col overflow-x-hidden">
+
+    <!-- GLOW BACKGROUND EFFECT -->
+    <div class="fixed top-0 left-1/4 w-[500px] h-[500px] bg-accent-600/10 rounded-full blur-[120px] pointer-events-none z-0"></div>
+    <div class="fixed bottom-10 right-1/4 w-[400px] h-[400px] bg-indigo-500/10 rounded-full blur-[100px] pointer-events-none z-0"></div>
+
+    <!-- CABEÇALHO -->
+    <header class="border-b border-slate-900 bg-slate-950/70 backdrop-blur-md sticky top-0 z-40 py-4 px-6 flex items-center justify-between shrink-0">
+        <div class="flex items-center gap-3 cursor-pointer" onclick="navigateToDashboard()">
+            <div class="h-10 w-10 rounded-xl bg-gradient-to-tr from-accent-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-accent-500/20">
+                <i class="fa-solid fa-cubes text-white text-lg"></i>
+            </div>
+            <div>
+                <h1 class="text-lg font-display font-bold tracking-tight bg-gradient-to-r from-white via-accent-100 to-accent-500 bg-clip-text text-transparent">
+                    OmniTool <span class="text-accent-500 font-medium">Studio</span>
+                </h1>
+                <p class="text-[10px] text-slate-400">Ferramentas Criativas Locais e Seguras</p>
+            </div>
+        </div>
+
+        <!-- Links e Configurações -->
+        <div class="flex items-center gap-3">
+            <button onclick="toggleApiModal()" class="flex items-center gap-2 px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/40 text-xs text-slate-300 hover:bg-slate-800 transition">
+                <i class="fa-solid fa-key text-amber-400"></i>
+                <span id="api-status-text">Chave Gemini API</span>
+            </button>
+            <button id="theme-toggle" class="h-9 w-9 rounded-lg border border-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition">
+                <i class="fa-solid fa-moon text-lg"></i>
+            </button>
+        </div>
+    </header>
+
+    <!-- BANNER AD PLACEHOLDER (TOPO) -->
+    <div class="w-full bg-slate-950 px-6 pt-4 flex justify-center z-10 shrink-0">
+        <div class="ad-container w-full max-w-5xl h-24 bg-slate-900/40 border border-slate-900 rounded-xl flex flex-col items-center justify-center relative overflow-hidden">
+            <span class="text-[9px] text-slate-600 uppercase tracking-widest absolute top-1 left-3">Publicidade</span>
+            <!-- Espaço do Google AdSense -->
+            <div class="text-xs text-slate-500 font-medium"><i class="fa-solid fa-rectangle-ad mr-1.5"></i> Espaço para Banner Responsivo Adsense</div>
+        </div>
+    </div>
+
+    <!-- ÁREA PRINCIPAL -->
+    <div class="flex-1 max-w-7xl w-full mx-auto p-6 flex flex-col md:flex-row gap-6 z-10 overflow-hidden">
+        
+        <!-- SIDEBAR DE NAVEGAÇÃO RÁPIDA -->
+        <aside class="w-full md:w-64 shrink-0 flex flex-col gap-4">
+            <div class="bg-slate-900/30 border border-slate-900 rounded-2xl p-4 flex flex-col gap-1.5">
+                <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider px-3 mb-2 block">Ferramentas</span>
+                
+                <button onclick="switchTool('dashboard')" id="nav-dashboard" class="nav-btn active flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-300 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-chart-simple text-sm min-w-[18px]"></i>
+                    <span>Painel Geral</span>
+                </button>
+                
+                <button onclick="switchTool('bg-remover')" id="nav-bg-remover" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-wand-magic-sparkles text-sm min-w-[18px]"></i>
+                    <span>Remover Fundo IA</span>
+                </button>
+
+                <button onclick="switchTool('image-compressor')" id="nav-image-compressor" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-compress text-sm min-w-[18px]"></i>
+                    <span>Compressor Imagem</span>
+                </button>
+
+                <button onclick="switchTool('qr-suite')" id="nav-qr-suite" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-qrcode text-sm min-w-[18px]"></i>
+                    <span>QR Code Suite</span>
+                </button>
+
+                <button onclick="switchTool('color-palette')" id="nav-color-palette" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-palette text-sm min-w-[18px]"></i>
+                    <span>Paleta de Cores</span>
+                </button>
+            </div>
+
+            <!-- AD PLACEHOLDER (LATERAL ESQUERDA) -->
+            <div class="ad-container flex-1 min-h-[250px] bg-slate-900/40 border border-slate-900 rounded-2xl flex flex-col items-center justify-center relative overflow-hidden hidden md:flex">
+                <span class="text-[9px] text-slate-600 uppercase tracking-widest absolute top-2 left-3">Publicidade</span>
+                <div class="text-xs text-slate-500 font-medium px-4 text-center">
+                    <i class="fa-solid fa-rectangle-ad block text-lg mb-2 text-slate-600"></i>
+                    Anúncio Lateral 300x250
+                </div>
+            </div>
+        </aside>
+
+        <!-- CONTAINER DA FERRAMENTA ATIVA -->
+        <main id="tool-viewport" class="flex-1 bg-slate-900/20 border border-slate-900 rounded-3xl p-6 relative flex flex-col overflow-hidden min-h-[500px]">
+            <!-- Injetado dinamicamente via JS -->
+            <div id="loader" class="absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-50 rounded-3xl">
+                <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent-500 mb-4"></div>
+                <p class="text-xs text-slate-400">Carregando ferramenta...</p>
+            </div>
+        </main>
+    </div>
+
+    <!-- RODAPÉ -->
+    <footer class="border-t border-slate-900 bg-slate-950/40 py-6 px-8 text-center text-xs text-slate-500 z-10 shrink-0">
+        <div class="max-w-7xl mx-auto flex flex-col md:flex-row items-center justify-between gap-4">
+            <div>
+                <p>&copy; 2026 OmniTool Studio. Todos os direitos reservados. Processamento 100% local e seguro no navegador.</p>
+            </div>
+            <div class="flex items-center gap-4">
+                <a href="#" class="hover:text-slate-300">Privacidade</a>
+                <span>&bull;</span>
+                <a href="#" class="hover:text-slate-300">Termos de Uso</a>
+                <span>&bull;</span>
+                <a href="https://github.com" target="_blank" class="hover:text-slate-300"><i class="fa-brands fa-github mr-1"></i> GitHub</a>
+            </div>
+        </div>
+    </footer>
+
+    <!-- MODAL DE CONFIGURAÇÃO DA CHAVE API GEMINI -->
+    <div id="api-modal" class="hidden fixed inset-0 bg-slate-950/80 backdrop-blur-md flex items-center justify-center z-50 p-4">
+        <div class="bg-slate-900 border border-slate-800 w-full max-w-md rounded-2xl shadow-2xl p-6 relative overflow-hidden">
+            <div class="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-500 to-accent-500"></div>
+            
+            <div class="flex items-center justify-between mb-4">
+                <div class="flex items-center gap-2">
+                    <i class="fa-solid fa-key text-amber-400"></i>
+                    <h3 class="font-display font-bold text-white">Configuração Gemini API</h3>
+                </div>
+                <button onclick="toggleApiModal()" class="text-slate-500 hover:text-white transition">
+                    <i class="fa-solid fa-times"></i>
+                </button>
+            </div>
+
+            <p class="text-xs text-slate-400 leading-relaxed mb-4">
+                Insira uma chave da **Gemini API** para liberar recursos avançados de **Geração Criativa de Fundos** e **Assistente de Cópia / IA Copy** nas ferramentas.
+            </p>
+
+            <div class="space-y-3">
+                <div>
+                    <label class="block text-xs text-slate-300 mb-1">Chave Gemini API:</label>
+                    <input type="password" id="input-api-key" placeholder="AIzaSy..." class="w-full px-3 py-2 text-xs rounded-xl border border-slate-800 bg-slate-950 text-white focus:outline-none focus:border-accent-500 transition">
+                </div>
+
+                <div class="flex items-center justify-between pt-2">
+                    <a href="https://ai.google.dev/" target="_blank" class="text-[10px] text-accent-400 hover:underline">Obter Chave Grátis <i class="fa-solid fa-arrow-up-right-from-square ml-0.5"></i></a>
+                    <div class="flex gap-2">
+                        <button onclick="toggleApiModal()" class="px-3 py-1.5 rounded-lg border border-slate-800 text-xs text-slate-400 hover:text-white transition">Cancelar</button>
+                        <button onclick="saveApiKey()" class="px-3 py-1.5 rounded-lg bg-accent-600 hover:bg-accent-500 text-xs font-bold text-white transition">Salvar Chave</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- SCRIPTS CORE DO APP -->
+    <script src="js/app.js"></script>
+</body>
+</html>
