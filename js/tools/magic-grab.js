@@ -110,7 +110,6 @@
         const uploader = document.getElementById('grab-file-uploader');
         const placeholder = document.getElementById('grab-placeholder');
         setupDragDrop(placeholder, uploader, (file) => handleFile(file));
-        uploader.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
 
         const lblP = document.getElementById('lbl-grab-people');
         const lblO = document.getElementById('lbl-grab-objects');
@@ -166,6 +165,9 @@
                 state.workspaceCanvas.classList.remove('hidden');
                 document.getElementById('grab-placeholder').classList.add('hidden');
                 document.getElementById('btn-run-grab').removeAttribute('disabled');
+                ['btn-bg-mode-inpainted', 'btn-bg-mode-original', 'btn-bg-mode-transparent'].forEach(id => {
+                    document.getElementById(id).removeAttribute('disabled');
+                });
                 state.foregroundImage = null; state.backgroundCanvas = null;
                 hideLoader(); renderWorkspace();
             };
@@ -205,9 +207,10 @@
         else runImglyGrab();
     }
 
-    function runMediaPipeGrab() {
+    async function runMediaPipeGrab() {
         showLoader('Separando...', 'MediaPipe AI processando...', 30);
         try {
+            if (typeof window.ensureMediaPipe === 'function') await window.ensureMediaPipe();
             const seg = new SelfieSegmentation({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
             seg.setOptions({ modelSelection: 1 });
             seg.onResults((results) => {
@@ -217,12 +220,13 @@
                 mask.width = w; mask.height = h;
                 const mCtx = mask.getContext('2d');
                 mCtx.drawImage(results.segmentationMask, 0, 0);
-                const d = mCtx.getImageData(0, 0, w, h).data;
+                const imgData = mCtx.getImageData(0, 0, w, h);
+                const d = imgData.data;
                 for (let i = 0; i < d.length; i += 4) {
                     const v = d[i] > 128 ? 255 : 0;
                     d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = v;
                 }
-                mCtx.putImageData(d, 0, 0);
+                mCtx.putImageData(imgData, 0, 0);
                 applyIsolateSubject(mask);
             });
             setTimeout(() => {
@@ -230,22 +234,28 @@
                     hideLoader(); showNotification("Falha no MediaPipe.");
                 });
             }, 300);
-        } catch (e) { hideLoader(); }
+        } catch (e) { hideLoader(); showNotification("Não foi possível iniciar o MediaPipe."); }
     }
 
     async function runImglyGrab() {
-        if (!window.imglyRemoveBackground) {
-            showLoader('Carregando...', 'Inicializando IMG.LY...', 10);
-            await new Promise(r => {
-                const h = () => { r(); document.removeEventListener('imgly-ready', h); };
-                document.addEventListener('imgly-ready', h);
-                setTimeout(() => { r(); document.removeEventListener('imgly-ready', h); }, 25000);
-            });
-            if (!window.imglyRemoveBackground) { hideLoader(); showNotification("IMG.LY indisponível."); return; }
+        showLoader('Separando...', 'Inicializando IMG.LY...', 10);
+        try {
+            await window.loadImglyEngine();
+        } catch (e) {
+            hideLoader(); showNotification("IMG.LY indisponível. Tente novamente mais tarde.");
+            return;
         }
         showLoader('Separando...', 'IMG.LY processando...', 15);
         try {
-            const blob = await window.imglyRemoveBackground(state.currentFile, { model: 'isnet_quint8', device: 'cpu', proxyToWorker: false });
+            let blob = null;
+            try {
+                blob = await window.imglyRemoveBackground(state.currentFile, { model: 'isnet_quint8', device: 'cpu', proxyToWorker: false });
+            } catch (firstError) {
+                console.warn('IMG.LY primeira tentativa falhou, tentando worker:', firstError);
+                blob = await window.imglyRemoveBackground(state.currentFile, { model: 'isnet_quint8', device: 'cpu', proxyToWorker: true });
+            }
+            if (!blob) throw new Error('Nenhum resultado retornado pelo motor IMG.LY');
+
             const resImg = new Image();
             resImg.onload = () => {
                 const w = state.originalImage.naturalWidth;
@@ -254,15 +264,25 @@
                 mask.width = w; mask.height = h;
                 const mCtx = mask.getContext('2d');
                 mCtx.drawImage(resImg, 0, 0);
-                const d = mCtx.getImageData(0, 0, w, h).data;
+                const imgData = mCtx.getImageData(0, 0, w, h);
+                const d = imgData.data;
                 for (let i = 0; i < d.length; i += 4) {
                     d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = d[i+3] > 10 ? 255 : 0;
                 }
-                mCtx.putImageData(d, 0, 0);
+                mCtx.putImageData(imgData, 0, 0);
                 applyIsolateSubject(mask);
             };
+            resImg.onerror = (err) => {
+                hideLoader();
+                showNotification('Falha ao processar a máscara de objeto. Tente novamente com outra imagem.');
+                console.error('Erro ao carregar resultado IMG.LY:', err);
+            };
             resImg.src = URL.createObjectURL(blob);
-        } catch (e) { hideLoader(); showNotification("Falha ao isolar objeto."); }
+        } catch (e) {
+            hideLoader();
+            console.error('Erro IMG.LY object separation:', e);
+            showNotification("Falha ao isolar objeto. Verifique se a imagem contém um único objeto reconhecível.");
+        }
     }
 
     function getCroppedSubject(img, maskCanvas) {

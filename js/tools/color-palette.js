@@ -53,7 +53,6 @@
         const uploader = document.getElementById('file-input-palette');
         const zone = document.getElementById('upload-zone-palette');
         setupDragDrop(zone, uploader, (file) => handlePaletteFile(file));
-        uploader.addEventListener('change', (e) => { if (e.target.files[0]) handlePaletteFile(e.target.files[0]); });
 
         document.getElementById('btn-reset-palette').addEventListener('click', resetPalette);
         document.getElementById('btn-copy-palette').addEventListener('click', copyFullPalette);

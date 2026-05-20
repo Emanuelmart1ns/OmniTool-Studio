@@ -1,3 +1,5 @@
+const DEFAULT_GEMINI_KEY = '';
+
 let currentToolId = 'dashboard';
 let activeWebcamStream = null;
 
@@ -9,7 +11,8 @@ const tools = {
     'magic-grab': { title: 'Mover Sujeito', init: () => { if (typeof initMagicGrab === 'function') initMagicGrab(); } },
     'magic-eraser': { title: 'Apagar Objetos', init: () => { if (typeof initMagicEraser === 'function') initMagicEraser(); } },
     'canva-editor': { title: 'Canva Editor', init: () => { if (typeof initCanvaEditor === 'function') initCanvaEditor(); } },
-    'color-palette': { title: 'Paleta de Cores', init: () => { if (typeof initColorPalette === 'function') initColorPalette(); } }
+    'color-palette': { title: 'Paleta de Cores', init: () => { if (typeof initColorPalette === 'function') initColorPalette(); } },
+    'ai-assistant': { title: 'Assistente IA', init: () => { if (typeof initAiAssistant === 'function') initAiAssistant(); } }
 };
 
 const toolFileMap = {
@@ -19,10 +22,14 @@ const toolFileMap = {
     'magic-grab': 'magic-grab',
     'magic-eraser': 'magic-eraser',
     'canva-editor': 'canva-editor',
-    'color-palette': 'color-palette'
+    'color-palette': 'color-palette',
+    'ai-assistant': 'ai-assistant'
 };
 
 window.addEventListener('DOMContentLoaded', () => {
+    if (!localStorage.getItem('gemini_api_key') && DEFAULT_GEMINI_KEY) {
+        localStorage.setItem('gemini_api_key', DEFAULT_GEMINI_KEY);
+    }
     const savedKey = localStorage.getItem('gemini_api_key');
     if (savedKey) {
         document.getElementById('input-api-key').value = savedKey;
@@ -71,7 +78,8 @@ function renderDashboard() {
         { id: 'magic-grab', icon: 'fa-arrows-up-down-left-right', title: 'Mover Sujeito (Magic Grab)', desc: 'Recorte o sujeito da imagem original e arraste, escale ou reposicione de forma interativa.' },
         { id: 'magic-eraser', icon: 'fa-eraser', title: 'Apagar Objetos (Magic Eraser)', desc: 'Desenhe com o pincel sobre marcas, textos ou elementos que deseja ocultar da imagem.' },
         { id: 'canva-editor', icon: 'fa-object-group', title: 'Canva Editor', desc: 'Crie designs profissionais com templates, camadas, textos, formas geométricas e exportação em alta resolução.', badge: 'Novo' },
-        { id: 'color-palette', icon: 'fa-palette', title: 'Extrator de Paleta', desc: 'Selecione fotos para extrair automaticamente as paletas de cores e copie os códigos HEX/RGB.' }
+        { id: 'color-palette', icon: 'fa-palette', title: 'Extrator de Paleta', desc: 'Selecione fotos para extrair automaticamente as paletas de cores e copie os códigos HEX/RGB.' },
+        { id: 'ai-assistant', icon: 'fa-brain', title: 'Assistente Criativo IA', desc: 'Analise imagens com Gemini Vision para gerar títulos, copy de marketing, hashtags e sugestões de fundo.', badge: 'Novo' }
     ];
 
     viewport.innerHTML = `
@@ -175,7 +183,7 @@ function showNotification(text) {
 }
 
 async function callGeminiAPI(prompt, maxTokens = 200) {
-    const apiKey = localStorage.getItem('gemini_api_key');
+    const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
     if (!apiKey) {
         toggleApiModal();
         showNotification("Chave Gemini API necessária. Clique no botão da chave no topo para configurar.");
@@ -216,7 +224,7 @@ async function callGeminiAPI(prompt, maxTokens = 200) {
 }
 
 async function callGeminiImagen(prompt, aspectRatio = '1:1') {
-    const apiKey = localStorage.getItem('gemini_api_key');
+    const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
     if (!apiKey) {
         toggleApiModal();
         showNotification("Chave Gemini API necessária. Clique no botão da chave no topo para configurar.");
@@ -224,9 +232,9 @@ async function callGeminiImagen(prompt, aspectRatio = '1:1') {
     }
 
     const models = [
-        'gemini-2.0-flash-exp-image-generation',
-        'gemini-2.0-flash-preview-image-generation',
-        'gemini-1.5-flash'
+        'gemini-3-pro-image-preview',
+        'gemini-3.1-flash-image-preview',
+        'gemini-2.5-flash-image'
     ];
 
     for (const model of models) {
@@ -237,7 +245,7 @@ async function callGeminiImagen(prompt, aspectRatio = '1:1') {
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     contents: [{ parts: [{ text: prompt }] }],
-                    generationConfig: { responseModalities: ["TEXT", "IMAGE"] }
+                    generationConfig: { responseModalities: ["IMAGE", "TEXT"] }
                 })
             });
             const data = await res.json();
@@ -253,7 +261,7 @@ async function callGeminiImagen(prompt, aspectRatio = '1:1') {
                 throw new Error(errMsg);
             }
 
-            if (data.candidates && data.candidates[0]?.content?.parts) {
+                    if (data.candidates && data.candidates[0]?.content?.parts) {
                 for (const part of data.candidates[0].content.parts) {
                     if (part.inlineData) {
                         return `data:${part.inlineData.mimeType};base64,${part.inlineData.data}`;
@@ -274,6 +282,103 @@ async function callGeminiImagen(prompt, aspectRatio = '1:1') {
         }
     }
     showNotification("Nenhum modelo de imagem disponível. Verifique sua chave API.");
+    return null;
+}
+
+async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries = 2) {
+    const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
+    if (!apiKey) {
+        toggleApiModal();
+        showNotification("Chave Gemini API necessária. Clique no botão da chave no topo para configurar.");
+        return null;
+    }
+
+    const models = [
+        'imagen-3.0-capability-001',
+        'imagen-3.0-editing-001'
+    ];
+
+    const payload = {
+        instances: [{
+            prompt: prompt,
+            referenceImages: [
+                {
+                    referenceType: "REFERENCE_TYPE_RAW",
+                    referenceId: 1,
+                    referenceImage: {
+                        bytesBase64Encoded: originalBase64
+                    }
+                },
+                {
+                    referenceType: "REFERENCE_TYPE_MASK",
+                    referenceId: 2,
+                    referenceImage: {
+                        bytesBase64Encoded: maskBase64
+                    }
+                }
+            ]
+        }],
+        parameters: {
+            sampleCount: 1,
+            editMode: "EDIT_MODE_INPAINT_REMOVAL"
+        }
+    };
+
+    let lastError = "Nenhuma resposta de imagem obtida.";
+
+    for (const model of models) {
+        if (retries <= 0) break;
+        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${apiKey}`;
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+            const data = await res.json();
+            if (!res.ok) {
+                const errMsg = data?.error?.message || `Erro HTTP ${res.status}`;
+                lastError = errMsg;
+                if (res.status === 403 || res.status === 401) {
+                    showNotification("Chave API inválida ou sem permissão. Clique no botão da chave no topo para corrigir.");
+                    return null;
+                }
+                console.warn(`Modelo ${model} falhou: ${errMsg}`);
+                retries -= 1;
+                continue;
+            }
+            if (data.predictions && data.predictions.length > 0 && data.predictions[0].bytesBase64Encoded) {
+                return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+            }
+            retries -= 1;
+        } catch (e) {
+            console.warn(`Modelo ${model} erro:`, e.message || e);
+            lastError = e.message || e;
+            retries -= 1;
+        }
+    }
+    showNotification(`Falha na IA: ${lastError}`);
+    return null;
+}
+
+async function callGeminiImagenWithRetries(prompt, retries = 2) {
+    let lastError = null;
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const result = await callGeminiImagen(prompt);
+            if (result) return result;
+        } catch (e) {
+            lastError = e;
+            console.warn(`Tentativa ${attempt} Gemini falhou:`, e.message || e);
+            if (e.message && (e.message.includes('Chave API') || e.message.includes('inválida'))) {
+                break;
+            }
+            await new Promise(resolve => setTimeout(resolve, attempt * 1200));
+        }
+    }
+    if (lastError) {
+        showNotification(`Erro Gemini persistente: ${lastError.message || 'por favor, tente novamente.'}`);
+    }
     return null;
 }
 
@@ -309,6 +414,47 @@ function trackToolView(toolId) {
     } catch(e) {}
 }
 
+function loadScript(src, id) {
+    return new Promise((resolve, reject) => {
+        if (id && document.getElementById(id)) {
+            return resolve();
+        }
+        const script = document.createElement('script');
+        if (id) script.id = id;
+        script.src = src;
+        script.async = true;
+        script.onload = resolve;
+        script.onerror = () => reject(new Error(`Falha ao carregar ${src}`));
+        document.body.appendChild(script);
+    });
+}
+
+window.ensureTesseract = async function() {
+    if (typeof Tesseract !== 'undefined') return;
+    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js', 'tesseract-js');
+};
+
+window.ensureMediaPipe = async function() {
+    if (typeof SelfieSegmentation !== 'undefined') return;
+    await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js', 'mediapipe-selfie');
+};
+
+window.loadImglyEngine = async function() {
+    if (window.imglyRemoveBackground) return;
+    try {
+        const m = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+        const fn = m.removeBackground || m.default || m.imglyRemoveBackground;
+        if (fn) {
+            window.imglyRemoveBackground = fn;
+            window.imglyLoaded = true;
+            document.dispatchEvent(new CustomEvent('imgly-ready'));
+        }
+    } catch (e) {
+        console.error('IMG.LY load failed:', e);
+        throw e;
+    }
+};
+
 function setupDragDrop(element, fileInput, onFile) {
     element.addEventListener('click', () => fileInput.click());
     fileInput.addEventListener('change', (e) => { if (e.target.files[0]) onFile(e.target.files[0]); });
@@ -321,14 +467,20 @@ function setupDragDrop(element, fileInput, onFile) {
     });
 }
 
-function fitCanvasInContainer(canvas, container, padding = 32) {
+function fitCanvasInContainer(canvas, container, padding = 32, anchor = 'top-right') {
     const cw = container.clientWidth - padding;
     const ch = container.clientHeight - padding;
     const iw = canvas.width;
     const ih = canvas.height;
     const scale = Math.min(cw / iw, ch / ih, 1.0);
-    const ox = (container.clientWidth - iw * scale) / 2;
-    const oy = (container.clientHeight - ih * scale) / 2;
+    let ox, oy;
+    if (anchor === 'top-right') {
+        ox = Math.max(8, container.clientWidth - iw * scale - 16);
+        oy = 12; // small top padding
+    } else {
+        ox = (container.clientWidth - iw * scale) / 2;
+        oy = (container.clientHeight - ih * scale) / 2;
+    }
     canvas.style.width = `${iw}px`;
     canvas.style.height = `${ih}px`;
     canvas.style.maxWidth = 'none';

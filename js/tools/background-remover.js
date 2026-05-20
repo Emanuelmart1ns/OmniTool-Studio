@@ -161,7 +161,6 @@
         const workspace = document.getElementById('workspace-container');
 
         setupDragDrop(placeholder, uploader, (file) => {
-            uploader.files = new FileList(); // reset
             handleFile(file);
         });
         workspace.addEventListener('dragover', (e) => { e.preventDefault(); workspace.classList.add('border-accent-500/50'); });
@@ -352,9 +351,10 @@
         else runImgly();
     }
 
-    function runMediaPipe() {
+    async function runMediaPipe() {
         showLoader('MediaPipe AI', 'Isolando silhueta...', 30);
         try {
+            if (typeof window.ensureMediaPipe === 'function') await window.ensureMediaPipe();
             const seg = new SelfieSegmentation({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
             seg.setOptions({ modelSelection: 1 });
             seg.onResults((results) => {
@@ -384,18 +384,14 @@
     }
 
     async function runImgly() {
-        if (!window.imglyRemoveBackground) {
-            showLoader('Carregando Motor', 'Iniciando IMG.LY...', 10);
-            await new Promise((resolve) => {
-                const onReady = () => { resolve(); document.removeEventListener('imgly-ready', onReady); };
-                document.addEventListener('imgly-ready', onReady);
-                setTimeout(() => { resolve(); document.removeEventListener('imgly-ready', onReady); }, 25000);
-            });
-            if (!window.imglyRemoveBackground) {
-                hideLoader(); showNotification("IMG.LY demorou demais."); return;
-            }
+        showLoader('IMG.LY AI', 'Iniciando IMG.LY...', 10);
+        try {
+            await window.loadImglyEngine();
+        } catch (e) {
+            hideLoader(); showNotification("IMG.LY indisponível. Tente novamente mais tarde.");
+            return;
         }
-        showLoader('IMG.LY AI', 'Isolando objetos...', 10);
+
         try {
             const blob = await window.imglyRemoveBackground(state.currentFile, {
                 model: 'isnet_quint8', device: 'cpu', proxyToWorker: false,
@@ -476,7 +472,7 @@
 
     function onCanvasUp() {
         state.isPanning = false; state.isDrawing = false; state.lastImgPos = null;
-        if (state.activeAction === 'pan') state.workspaceCanvas.style.cursor = 'grab';
+        if (state.activeAction === 'pan' && state.workspaceCanvas) state.workspaceCanvas.style.cursor = 'grab';
     }
 
     function onCanvasWheel(e) {

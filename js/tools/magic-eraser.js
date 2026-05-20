@@ -13,7 +13,9 @@
         isPanning: false,
         lastMousePos: { x: 0, y: 0 },
         lastImgPos: null,
-        activeAction: 'brush'
+        activeAction: 'brush',
+        useAi: false,
+        aiPrompt: ''
     };
 
     window.initMagicEraser = function() {
@@ -94,11 +96,19 @@
 
                         <hr class="border-slate-900">
 
+                        <div class="space-y-2">
+                            <span class="tool-section-title">3. Guia de Fundo (Opcional)</span>
+                            <input id="eraser-ai-prompt" type="text" class="w-full rounded-xl border border-slate-800 bg-slate-950/80 px-3 py-2 text-xs text-slate-200" placeholder="Ex: grama, parede branca, mar...">
+                            <p class="text-[10px] text-slate-500">Descreva o que deve preencher a área removida. Se vazio, a IA completará automaticamente.</p>
+                        </div>
+
+                        <hr class="border-slate-900">
+
                         <div class="text-[9px] text-slate-500 leading-relaxed bg-slate-950/40 p-3 rounded-xl border border-slate-900 space-y-1">
                             <span class="font-bold text-slate-400 block"><i class="fa-solid fa-lightbulb text-amber-400 mr-1"></i> Como usar:</span>
                             <p>1. Carregue uma imagem.</p>
                             <p>2. Pincele em vermelho a área a remover.</p>
-                            <p>3. Clique "Apagar" para processar.</p>
+                            <p>3. Clique "Apagar" para processar com IA.</p>
                             <p>4. Baixe o resultado!</p>
                         </div>
                     </div>
@@ -112,7 +122,6 @@
         const uploader = document.getElementById('eraser-file-uploader');
         const placeholder = document.getElementById('eraser-placeholder');
         setupDragDrop(placeholder, uploader, (file) => handleFile(file));
-        uploader.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
 
         document.getElementById('btn-eraser-tool-brush').addEventListener('click', () => setToolMode('brush'));
         document.getElementById('btn-eraser-tool-pan').addEventListener('click', () => setToolMode('pan'));
@@ -123,6 +132,12 @@
         });
         document.getElementById('eraser-brush-hardness').addEventListener('input', (e) => {
             document.getElementById('eraser-brush-hardness-val').innerText = `${e.target.value}%`;
+        });
+
+        state.useAi = true;
+        const aiPromptInput = document.getElementById('eraser-ai-prompt');
+        aiPromptInput.addEventListener('input', (e) => {
+            state.aiPrompt = e.target.value;
         });
 
         document.getElementById('btn-erase-clear').addEventListener('click', clearMask);
@@ -267,70 +282,106 @@
         renderWorkspace();
     }
 
-    function runInpainting() {
+    async function runInpainting() {
         if (!state.originalImage) return;
-        showLoader('Apagando...', 'Reconstruindo pixels via inpainting local...');
-        setTimeout(() => {
-            const w = state.workspaceCanvas.width;
-            const h = state.workspaceCanvas.height;
 
-            const out = document.createElement('canvas');
-            out.width = w; out.height = h;
-            const outCtx = out.getContext('2d');
-            outCtx.drawImage(state.originalImage, 0, 0);
-            const imgData = outCtx.getImageData(0, 0, w, h);
-            const pixels = imgData.data;
-            const mPx = state.maskCtx.getImageData(0, 0, w, h).data;
+        const apiKey = (localStorage.getItem('gemini_api_key') || '').trim();
+        if (!apiKey) {
+            toggleApiModal();
+            showNotification("Chave Gemini API necessária. Configure-a no topo.");
+            return;
+        }
 
-            const maskCoords = [], borderCoords = [];
-            for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {
-                const idx = (y * w + x) * 4;
-                if (mPx[idx + 3] > 10) {
-                    maskCoords.push({ x, y });
-                    const n1 = (y * w + (x-1)) * 4, n2 = (y * w + (x+1)) * 4;
-                    const n3 = ((y-1) * w + x) * 4, n4 = ((y+1) * w + x) * 4;
-                    if (mPx[n1+3] === 0 || mPx[n2+3] === 0 || mPx[n3+3] === 0 || mPx[n4+3] === 0)
-                        borderCoords.push({ x, y });
-                }
+        const w = state.maskCanvas.width;
+        const h = state.maskCanvas.height;
+        const maskData = state.maskCtx.getImageData(0, 0, w, h).data;
+        let hasMask = false;
+        for (let i = 3; i < maskData.length; i += 4) {
+            if (maskData[i] > 10) {
+                hasMask = true;
+                break;
             }
+        }
 
-            if (maskCoords.length === 0) { hideLoader(); showNotification("Selecione algo com o pincel primeiro."); return; }
+        if (!hasMask) {
+            showNotification("Pincele sobre os objetos que deseja apagar primeiro.");
+            return;
+        }
 
-            const step = Math.max(1, Math.floor(maskCoords.length / 5000));
-            for (let i = 0; i < maskCoords.length; i += step) {
-                const { x: px, y: py } = maskCoords[i];
-                let bestX = px, bestY = py, minDist = Infinity;
-                const radius = 45;
-                for (let sy = Math.max(1, py - radius); sy <= Math.min(h - 2, py + radius); sy += 3) {
-                    for (let sx = Math.max(1, px - radius); sx <= Math.min(w - 2, px + radius); sx += 3) {
-                        if (mPx[(sy * w + sx) * 4 + 3] <= 10) {
-                            const d = (sx - px) ** 2 + (sy - py) ** 2;
-                            if (d < minDist) { minDist = d; bestX = sx; bestY = sy; }
-                        }
-                    }
-                }
-                const tI = (py * w + px) * 4, sI = (bestY * w + bestX) * 4;
-                pixels[tI] = pixels[sI]; pixels[tI+1] = pixels[sI+1]; pixels[tI+2] = pixels[sI+2];
+        showLoader("Apagando...", "Enviando imagem e máscara para a IA do Imagen...");
+        await runAiInpainting();
+    }
+
+    function buildAiInpaintingPrompt() {
+        const basePrompt = state.aiPrompt.trim();
+        if (basePrompt) {
+            return `Remove the painted object and fill the background with: ${basePrompt}. Keep it seamless, matching the surrounding textures, colors, and lighting.`;
+        }
+        return 'Remove the painted object and reconstruct the background naturally to match the rest of the scene.';
+    }
+
+    async function runAiInpainting() {
+        const w = state.workspaceCanvas.width;
+        const h = state.workspaceCanvas.height;
+        const prompt = buildAiInpaintingPrompt();
+
+        const originalCanvas = document.createElement('canvas');
+        originalCanvas.width = w;
+        originalCanvas.height = h;
+        originalCanvas.getContext('2d').drawImage(state.originalImage, 0, 0, w, h);
+        const originalBase64 = originalCanvas.toDataURL('image/png').split(',')[1];
+
+        const maskBinaryCanvas = document.createElement('canvas');
+        maskBinaryCanvas.width = w;
+        maskBinaryCanvas.height = h;
+        const mbCtx = maskBinaryCanvas.getContext('2d');
+        
+        mbCtx.fillStyle = 'black';
+        mbCtx.fillRect(0, 0, w, h);
+        
+        const maskImgData = state.maskCtx.getImageData(0, 0, w, h);
+        const pixels = maskImgData.data;
+        const binaryData = mbCtx.createImageData(w, h);
+        const binaryPixels = binaryData.data;
+        
+        for (let i = 0; i < pixels.length; i += 4) {
+            const alpha = pixels[i + 3];
+            if (alpha > 10) {
+                binaryPixels[i] = 255;
+                binaryPixels[i + 1] = 255;
+                binaryPixels[i + 2] = 255;
+                binaryPixels[i + 3] = 255;
+            } else {
+                binaryPixels[i] = 0;
+                binaryPixels[i + 1] = 0;
+                binaryPixels[i + 2] = 0;
+                binaryPixels[i + 3] = 255;
             }
+        }
+        mbCtx.putImageData(binaryData, 0, 0);
+        const maskBase64 = maskBinaryCanvas.toDataURL('image/png').split(',')[1];
 
-            outCtx.putImageData(imgData, 0, 0);
-            outCtx.filter = 'blur(4px)';
-            borderCoords.forEach(c => {
-                const idx = (c.y * w + c.x) * 4;
-                outCtx.fillStyle = `rgb(${pixels[idx]},${pixels[idx+1]},${pixels[idx+2]})`;
-                outCtx.fillRect(c.x - 3, c.y - 3, 6, 6);
-            });
-            outCtx.filter = 'none';
+        const imageUrl = await callGeminiInpainting(prompt, originalBase64, maskBase64, 3);
+        if (!imageUrl) {
+            hideLoader();
+            return;
+        }
 
-            const finalImg = new Image();
-            finalImg.onload = () => {
-                state.originalImage = finalImg;
-                clearMask(); hideLoader(); renderWorkspace();
-                showNotification("Elemento removido!");
-            };
-            state.originalDataURL = out.toDataURL('image/png');
-            finalImg.src = state.originalDataURL;
-        }, 150);
+        const generated = new Image();
+        generated.crossOrigin = 'anonymous';
+        generated.onload = () => {
+            state.originalImage = generated;
+            clearMask();
+            hideLoader();
+            renderWorkspace();
+            state.originalDataURL = generated.src;
+            showNotification('Elemento removido com IA!');
+        };
+        generated.onerror = () => {
+            hideLoader();
+            showNotification('Falha ao carregar imagem gerada pela IA. Tente novamente.');
+        };
+        generated.src = imageUrl;
     }
 
     function downloadResult() {

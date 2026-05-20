@@ -74,7 +74,6 @@
         const uploader = document.getElementById('ocr-file-uploader');
         const placeholder = document.getElementById('ocr-placeholder');
         setupDragDrop(placeholder, uploader, (file) => handleFile(file));
-        uploader.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
 
         document.getElementById('btn-lang-por').addEventListener('click', () => setLang('por'));
         document.getElementById('btn-lang-eng').addEventListener('click', () => setLang('eng'));
@@ -111,6 +110,7 @@
         if (!state.selectedImage) return;
         showLoader('OCR', 'Inicializando rede neural local...', 5);
         try {
+            if (typeof window.ensureTesseract === 'function') await window.ensureTesseract();
             const result = await Tesseract.recognize(state.selectedImage, state.selectedLanguage, {
                 logger: m => {
                     if (m.status === 'recognizing text') {

@@ -125,7 +125,6 @@
         const placeholder = document.getElementById('gen-placeholder');
         setupDragDrop(placeholder, uploader, (file) => handleFile(file));
         document.getElementById('btn-re-upload').addEventListener('click', () => uploader.click());
-        uploader.addEventListener('change', (e) => { if (e.target.files[0]) handleFile(e.target.files[0]); });
 
         document.getElementById('btn-enhance-prompt').addEventListener('click', enhancePrompt);
         document.getElementById('btn-generate-bg').addEventListener('click', generateBackground);
@@ -292,14 +291,57 @@
         const prompt = document.getElementById('ai-prompt').value.trim();
         if (!prompt) { showNotification("Descreva o cenário do fundo."); return; }
 
-        if (!localStorage.getItem('gemini_api_key')) {
+        const apiKey = localStorage.getItem('gemini_api_key');
+        if (!apiKey) {
             if (typeof toggleApiModal === 'function') toggleApiModal();
             showNotification("Configure sua chave Gemini API primeiro. Clique no botão da chave no topo.");
             return;
         }
 
         showLoader('Criando Fundo...', 'Gerando imagem com Gemini IA... Isso pode levar 10-30s.');
-        const imageUrl = await callGeminiImagen(prompt);
+
+        const imagenModels = ['imagen-4.0-generate-001', 'imagen-4.0-fast-generate-001'];
+        let imageUrl = null;
+
+        for (const model of imagenModels) {
+            try {
+                const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${apiKey}`;
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        instances: [{ prompt: prompt }],
+                        parameters: { sampleCount: 1, aspectRatio: '1:1' }
+                    })
+                });
+                if (res.ok) {
+                    const data = await res.json();
+                    if (data.predictions && data.predictions.length > 0 && data.predictions[0].bytesBase64Encoded) {
+                        imageUrl = `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+                        break;
+                    }
+                } else if (res.status === 403 || res.status === 401) {
+                    hideLoader();
+                    showNotification("Chave API inválida ou sem permissão. Clique no botão da chave no topo.");
+                    return;
+                }
+            } catch (e) {
+                console.warn(`Imagen model ${model} failed:`, e);
+            }
+        }
+
+        if (!imageUrl) {
+            // tentativa final via Gemini Imagen
+            try { imageUrl = await callGeminiImagen(prompt); }
+            catch (e) { imageUrl = null; }
+        }
+
+        if (!imageUrl) {
+            // fallback local: gera um background sintético simples para manter fluxo de trabalho
+            imageUrl = generateLocalBackground(prompt);
+            showNotification('Gerador IA indisponível — aplicando fallback local.');
+        }
+
         if (imageUrl) {
             const img = new Image();
             img.onload = () => {
@@ -364,6 +406,33 @@
             ctx.drawImage(img, state.subjectPosition.x - sw / 2, state.subjectPosition.y - sh / 2, sw, sh);
         }
         downloadCanvasAsPNG(c, `composicao_ia_${Date.now()}.png`);
+    }
+
+    function generateLocalBackground(prompt) {
+        const w = state.canvasW || 1000;
+        const h = state.canvasH || 1000;
+        const c = document.createElement('canvas');
+        c.width = w; c.height = h;
+        const ctx = c.getContext('2d');
+        const p = (prompt || '').toLowerCase();
+        let a = '#0f172a', b = '#0f172a';
+        if (p.includes('praia') || p.includes('beach') || p.includes('sunset')) { a = '#ffb347'; b = '#ffd194'; }
+        else if (p.includes('neon') || p.includes('neon lights')) { a = '#0f172a'; b = '#6d28d9'; }
+        else if (p.includes('studio') || p.includes('estúdio')) { a = '#0f172a'; b = '#111827'; }
+        else if (p.includes('kitchen') || p.includes('cozinha')) { a = '#f6f2e8'; b = '#fff1e6'; }
+        else { a = '#0f172a'; b = '#0b1220'; }
+        const grad = ctx.createLinearGradient(0, 0, w, h);
+        grad.addColorStop(0, a);
+        grad.addColorStop(1, b);
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, w, h);
+        // subtle noise
+        ctx.globalAlpha = 0.06;
+        for (let i = 0; i < Math.floor((w * h) / 8000); i++) {
+            ctx.fillStyle = `rgba(255,255,255,${Math.random() * 0.08})`;
+            ctx.fillRect(Math.random() * w, Math.random() * h, Math.random() * 6 + 1, Math.random() * 6 + 1);
+        }
+        ctx.globalAlpha = 1;
+        return c.toDataURL('image/png');
     }
 
     function showLoader(title, desc) {
