@@ -16,16 +16,28 @@ const tools = {
             if (typeof initBgRemover === 'function') initBgRemover();
         }
     },
-    'image-compressor': {
-        title: 'Compressor Imagem',
+    'bg-generator': {
+        title: 'Gerador de Fundos IA',
         init: () => {
-            if (typeof initImageCompressor === 'function') initImageCompressor();
+            if (typeof initBgGenerator === 'function') initBgGenerator();
         }
     },
-    'qr-suite': {
-        title: 'QR Code Suite',
+    'grab-text': {
+        title: 'Extrair Texto OCR',
         init: () => {
-            if (typeof initQrSuite === 'function') initQrSuite();
+            if (typeof initGrabText === 'function') initGrabText();
+        }
+    },
+    'magic-grab': {
+        title: 'Mover Sujeito',
+        init: () => {
+            if (typeof initMagicGrab === 'function') initMagicGrab();
+        }
+    },
+    'magic-eraser': {
+        title: 'Apagar Objetos',
+        init: () => {
+            if (typeof initMagicEraser === 'function') initMagicEraser();
         }
     },
     'color-palette': {
@@ -105,29 +117,51 @@ function renderDashboard() {
                     </div>
                     <div class="space-y-1">
                         <h3 class="font-display font-bold text-sm text-white group-hover:text-accent-400 transition">Remover Fundo de Imagem</h3>
-                        <p class="text-xs text-slate-400 leading-relaxed">Apague fundos instantaneamente usando inteligência artificial local ou restaure detalhes manualmente.</p>
+                        <p class="text-xs text-slate-400 leading-relaxed">Apague fundos usando IA focada em pessoas e objetos ou faça o recorte por cor com a varinha mágica.</p>
                     </div>
                 </div>
 
-                <!-- CARD COMPRESSOR DE IMAGENS -->
-                <div onclick="switchTool('image-compressor')" class="group cursor-pointer bg-slate-900/30 border border-slate-900 rounded-2xl p-5 hover:border-accent-500/30 hover:bg-slate-900/50 transition duration-300 flex items-start gap-4">
+                <!-- CARD GERADOR DE FUNDOS -->
+                <div onclick="switchTool('bg-generator')" class="group cursor-pointer bg-slate-900/30 border border-slate-900 rounded-2xl p-5 hover:border-accent-500/30 hover:bg-slate-900/50 transition duration-300 flex items-start gap-4">
                     <div class="p-3 rounded-xl bg-accent-600/10 text-accent-400 group-hover:bg-accent-600 group-hover:text-white transition duration-300">
-                        <i class="fa-solid fa-compress text-xl"></i>
+                        <i class="fa-solid fa-image text-xl"></i>
                     </div>
                     <div class="space-y-1">
-                        <h3 class="font-display font-bold text-sm text-white group-hover:text-accent-400 transition">Compressor e Conversor</h3>
-                        <p class="text-xs text-slate-400 leading-relaxed">Comprima o peso físico de imagens (JPEG, PNG, WebP) direto no navegador ajustando qualidade.</p>
+                        <h3 class="font-display font-bold text-sm text-white group-hover:text-accent-400 transition">Gerador de Fundos IA</h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">Gere imagens de fundo criativas usando o Gemini Imagen e faça fusão automática do sujeito.</p>
                     </div>
                 </div>
 
-                <!-- CARD QR CODE SUITE -->
-                <div onclick="switchTool('qr-suite')" class="group cursor-pointer bg-slate-900/30 border border-slate-900 rounded-2xl p-5 hover:border-accent-500/30 hover:bg-slate-900/50 transition duration-300 flex items-start gap-4">
+                <!-- CARD EXTRAIR TEXTO OCR -->
+                <div onclick="switchTool('grab-text')" class="group cursor-pointer bg-slate-900/30 border border-slate-900 rounded-2xl p-5 hover:border-accent-500/30 hover:bg-slate-900/50 transition duration-300 flex items-start gap-4">
                     <div class="p-3 rounded-xl bg-accent-600/10 text-accent-400 group-hover:bg-accent-600 group-hover:text-white transition duration-300">
-                        <i class="fa-solid fa-qrcode text-xl"></i>
+                        <i class="fa-solid fa-file-lines text-xl"></i>
                     </div>
                     <div class="space-y-1">
-                        <h3 class="font-display font-bold text-sm text-white group-hover:text-accent-400 transition">QR Code Suite</h3>
-                        <p class="text-xs text-slate-400 leading-relaxed">Gere QR codes personalizados de links/textos ou escaneie códigos via webcam localmente.</p>
+                        <h3 class="font-display font-bold text-sm text-white group-hover:text-accent-400 transition">Extrair Texto OCR</h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">Escaneie e capture textos contidos em qualquer imagem localmente usando Tesseract.js.</p>
+                    </div>
+                </div>
+
+                <!-- CARD MOVER SUJEITO (MAGIC GRAB) -->
+                <div onclick="switchTool('magic-grab')" class="group cursor-pointer bg-slate-900/30 border border-slate-900 rounded-2xl p-5 hover:border-accent-500/30 hover:bg-slate-900/50 transition duration-300 flex items-start gap-4">
+                    <div class="p-3 rounded-xl bg-accent-600/10 text-accent-400 group-hover:bg-accent-600 group-hover:text-white transition duration-300">
+                        <i class="fa-solid fa-arrows-up-down-left-right text-xl"></i>
+                    </div>
+                    <div class="space-y-1">
+                        <h3 class="font-display font-bold text-sm text-white group-hover:text-accent-400 transition">Mover Sujeito (Magic Grab)</h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">Recorte o sujeito da imagem original e arraste, escale ou reposicione de forma interativa.</p>
+                    </div>
+                </div>
+
+                <!-- CARD APAGAR OBJETOS (MAGIC ERASER) -->
+                <div onclick="switchTool('magic-eraser')" class="group cursor-pointer bg-slate-900/30 border border-slate-900 rounded-2xl p-5 hover:border-accent-500/30 hover:bg-slate-900/50 transition duration-300 flex items-start gap-4">
+                    <div class="p-3 rounded-xl bg-accent-600/10 text-accent-400 group-hover:bg-accent-600 group-hover:text-white transition duration-300">
+                        <i class="fa-solid fa-eraser text-xl"></i>
+                    </div>
+                    <div class="space-y-1">
+                        <h3 class="font-display font-bold text-sm text-white group-hover:text-accent-400 transition">Apagar Objetos (Magic Eraser)</h3>
+                        <p class="text-xs text-slate-400 leading-relaxed">Desenhe com o pincel sobre marcas, textos ou elementos que deseja ocultar da imagem.</p>
                     </div>
                 </div>
 

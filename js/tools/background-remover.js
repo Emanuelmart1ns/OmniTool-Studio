@@ -1,550 +1,879 @@
-// Background Remover (FundoZero AI Modulado)
+// OmniTool Studio: Background Remover Tool Module
+(function() {
+    let state = {
+        originalImage: null,
+        currentFile: null,
+        workspaceCanvas: null,
+        workspaceCtx: null,
+        maskCanvas: null,
+        maskCtx: null,
+        aiMaskCache: null,
+        activeAction: 'pan', // pan, wand, brush
+        brushMode: 'erase', // erase, restore
+        brushSize: 40,
+        brushHardness: 0.8,
+        magicWandTolerance: 30,
+        bgColorType: 'transparent', // transparent, color
+        bgColorValue: '#ffffff',
+        zoomScale: 1.0,
+        zoomOffset: { x: 0, y: 0 },
+        isDrawing: false,
+        isPanning: false,
+        lastMousePos: { x: 0, y: 0 },
+        splitOffset: 0.5, // 0 to 1 for split slider
+        showSplit: false,
+        imglyReady: false
+    };
 
-// Tool states
-let bgRemoverState = {
-    originalImage: null,
-    currentFileOrBlob: null,
-    workspaceCanvas: null,
-    workspaceCtx: null,
-    maskCanvas: null,
-    maskCtx: null,
-    aiMaskCache: null,
-    zoom: 1.0,
-    panX: 0,
-    panY: 0,
-    isDragging: false,
-    startX: 0,
-    startY: 0,
-    brushSize: 30,
-    brushMode: 'erase', // erase, restore
-    brushHardness: 0.8,
-    isDrawing: false,
-    currentTool: 'pan', // pan, brush, wand
-    viewMode: 'split', // split, result, original
-    bgType: 'transparent',
-    bgSolidColor: '#ffffff',
-    bgGradientColors: ['#7c3aed', '#c084fc'],
-    aiGeneratedBgImage: null,
-    magicWandTolerance: 40,
-    splitValue: 50
-};
+    window.initBgRemover = function() {
+        const viewport = document.getElementById('tool-viewport');
+        viewport.innerHTML = `
+            <div class="fade-in flex flex-col h-full space-y-4">
+                <!-- TOP BAR CONTROL -->
+                <div class="flex flex-wrap items-center justify-between gap-3 bg-slate-900/40 p-4 border border-slate-900 rounded-2xl">
+                    <div class="flex items-center gap-2">
+                        <div class="h-8 w-8 rounded-lg bg-accent-600/10 text-accent-400 flex items-center justify-center">
+                            <i class="fa-solid fa-wand-magic-sparkles text-sm"></i>
+                        </div>
+                        <div>
+                            <h3 class="text-sm font-display font-bold text-white">Removedor de Fundo IA</h3>
+                            <p class="text-[10px] text-slate-400">Recorte local inteligente e retoque manual</p>
+                        </div>
+                    </div>
+                    
+                    <div class="flex items-center gap-2">
+                        <button id="btn-show-split" class="px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/30 text-xs text-slate-300 hover:bg-slate-800 transition flex items-center gap-1.5" disabled>
+                            <i class="fa-solid fa-columns"></i> Comparação Split
+                        </button>
+                        <button id="btn-reset-mask" class="px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/30 text-xs text-red-400 hover:bg-slate-800 transition flex items-center gap-1.5" disabled>
+                            <i class="fa-solid fa-rotate-left"></i> Reiniciar
+                        </button>
+                        <button id="btn-download-result" class="px-4 py-1.5 rounded-lg bg-accent-600 hover:bg-accent-500 text-xs font-bold text-white transition flex items-center gap-1.5 shadow-lg shadow-accent-500/20" disabled>
+                            <i class="fa-solid fa-download"></i> Baixar PNG
+                        </button>
+                    </div>
+                </div>
 
-// INITIALIZATION
-function initBgRemover() {
-    const viewport = document.getElementById('tool-viewport');
-    
-    // Inject Tool HTML
-    viewport.innerHTML = `
-        <div class="fade-in flex-1 flex flex-col md:flex-row overflow-hidden relative min-h-[500px]">
-            
-            <!-- CONTROLES LATERAIS -->
-            <div class="w-full md:w-64 border-r border-slate-900 bg-slate-950/20 p-4 flex flex-col justify-between shrink-0 overflow-y-auto no-scrollbar gap-5">
-                <div class="space-y-4">
-                    <div>
-                        <h3 class="text-xs font-bold text-white mb-2">Motor de Segmentação</h3>
-                        <div class="p-3.5 rounded-xl border border-slate-900 bg-slate-900/10 flex items-start gap-2.5">
-                            <i class="fa-solid fa-user-tie text-accent-400 mt-0.5"></i>
-                            <div>
-                                <span class="text-[11px] font-bold text-white block">MediaPipe Selfie</span>
-                                <p class="text-[10px] text-slate-400 leading-tight">Otimizado para pessoas, selfies e retratos locais.</p>
+                <!-- WORKSPACE GRID -->
+                <div class="flex-1 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-[400px]">
+                    <!-- CANVAS AREA (LEFT 3 COLS) -->
+                    <div class="lg:col-span-3 bg-slate-950/50 border border-slate-900 rounded-3xl relative flex items-center justify-center p-4 min-h-[300px] overflow-hidden" id="workspace-container">
+                        
+                        <!-- UPLOAD PLACEHOLDER -->
+                        <div id="upload-placeholder" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center cursor-pointer hover:bg-slate-900/10 transition z-10">
+                            <input type="file" id="file-uploader" class="hidden" accept="image/*">
+                            <div class="h-16 w-16 rounded-2xl bg-slate-900/60 border border-slate-800 flex items-center justify-center mb-4 group-hover:scale-105 transition">
+                                <i class="fa-solid fa-cloud-arrow-up text-accent-400 text-2xl"></i>
+                            </div>
+                            <h4 class="font-display font-semibold text-sm text-slate-200">Arraste ou selecione uma imagem</h4>
+                            <p class="text-xs text-slate-500 mt-1 max-w-xs">Formatos aceitos: JPEG, PNG, WebP. O processamento é local no seu dispositivo.</p>
+                        </div>
+
+                        <!-- WORK CANVAS -->
+                        <canvas id="canvas-bg-remover" class="hidden max-w-full max-h-full cursor-crosshair rounded-xl z-0"></canvas>
+
+                        <!-- LOADER DE PROCESSAMENTO INTERNO -->
+                        <div id="internal-loader" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex-col items-center justify-center z-20 rounded-3xl">
+                            <div class="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-accent-500 mb-4"></div>
+                            <h5 class="text-sm font-bold text-white" id="loader-title">Processando...</h5>
+                            <p class="text-xs text-slate-400 mt-1 max-w-xs text-center" id="loader-desc">Aguarde o processamento local.</p>
+                            <!-- PROGRESS BAR -->
+                            <div class="w-48 bg-slate-800 rounded-full h-1.5 mt-3 overflow-hidden">
+                                <div class="bg-accent-500 h-1.5 rounded-full w-0 transition-all duration-300" id="loader-progress"></div>
                             </div>
                         </div>
                     </div>
 
-                    <button id="btn-process-ai" onclick="runMediaPipeRemoval()" class="w-full py-2.5 px-3 rounded-xl bg-gradient-to-r from-accent-600 to-indigo-600 hover:from-accent-500 hover:to-indigo-500 text-white font-bold text-xs shadow-lg shadow-accent-500/10 transition flex items-center justify-center gap-1.5">
-                        <i class="fa-solid fa-wand-magic-sparkles"></i>
-                        <span>Remover Fundo com IA</span>
-                    </button>
-
-                    <div class="border-t border-slate-900/80"></div>
-
-                    <!-- ESTILIZAR FUNDO -->
-                    <div class="space-y-2">
-                        <span class="text-xs font-bold text-white">Opções de Fundo</span>
-                        <div class="grid grid-cols-2 gap-1.5">
-                            <button onclick="changeBgType('transparent')" id="bg-btn-transparent" class="p-2 border border-accent-500 bg-accent-500/10 text-[10px] text-accent-400 font-bold rounded-lg transition flex flex-col items-center gap-1">
-                                <i class="fa-solid fa-border-none text-sm"></i>
-                                <span>Transparente</span>
-                            </button>
-                            <button onclick="changeBgType('solid')" id="bg-btn-solid" class="p-2 border border-slate-900 hover:border-slate-800 text-[10px] text-slate-400 font-bold rounded-lg transition flex flex-col items-center gap-1">
-                                <i class="fa-solid fa-fill-drip text-sm"></i>
-                                <span>Cor Sólida</span>
+                    <!-- CONTROL SIDEBAR (RIGHT 1 COL) -->
+                    <div class="bg-slate-900/20 border border-slate-900 rounded-3xl p-4 flex flex-col gap-4">
+                        
+                        <!-- ENGINE TABS -->
+                        <div class="space-y-3">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">1. Motores de IA</span>
+                            <div class="grid grid-cols-2 gap-2 bg-slate-950/60 p-1.5 rounded-xl border border-slate-900">
+                                <label class="cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white" id="lbl-engine-people">
+                                    <input type="radio" name="ai-engine" value="mediapipe" checked class="hidden">
+                                    <i class="fa-solid fa-user"></i> Pessoas
+                                </label>
+                                <label class="cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200" id="lbl-engine-objects">
+                                    <input type="radio" name="ai-engine" value="imgly" class="hidden">
+                                    <i class="fa-solid fa-box"></i> Objetos
+                                </label>
+                            </div>
+                            <button id="btn-run-ai" class="w-full py-2.5 rounded-xl bg-accent-600 hover:bg-accent-500 text-xs font-bold text-white transition flex items-center justify-center gap-2" disabled>
+                                <i class="fa-solid fa-wand-magic-sparkles"></i> Remover Fundo IA
                             </button>
                         </div>
-                        
-                        <div id="panel-bg-solid" class="hidden flex items-center gap-2 pt-2">
-                            <input type="color" id="bg-solid-picker" value="#ffffff" onchange="setSolidBgColor(this.value)" class="h-7 w-12 rounded border border-slate-800 bg-transparent cursor-pointer">
-                            <span class="text-[10px] text-slate-400">Clique para selecionar</span>
+
+                        <hr class="border-slate-900">
+
+                        <!-- INTERACTIVE TOOLS -->
+                        <div class="space-y-3">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">2. Retoques Adicionais</span>
+                            
+                            <div class="grid grid-cols-3 gap-2">
+                                <button id="btn-tool-pan" class="tool-btn active p-2.5 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 font-medium transition flex flex-col items-center gap-1.5" disabled>
+                                    <i class="fa-solid fa-hand text-sm"></i> Panning
+                                </button>
+                                <button id="btn-tool-wand" class="tool-btn p-2.5 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 text-xs text-slate-400 font-medium transition flex flex-col items-center gap-1.5" disabled>
+                                    <i class="fa-solid fa-wand-magic text-sm"></i> Varinha
+                                </button>
+                                <button id="btn-tool-brush" class="tool-btn p-2.5 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 text-xs text-slate-400 font-medium transition flex flex-col items-center gap-1.5" disabled>
+                                    <i class="fa-solid fa-paintbrush text-sm"></i> Pincel
+                                </button>
+                            </div>
+
+                            <!-- DYNAMIC PANEL (WAND OR BRUSH CONTROLS) -->
+                            <div id="tool-settings-wand" class="hidden bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-2">
+                                <div class="flex items-center justify-between text-[11px] text-slate-300">
+                                    <span>Tolerância da Cor:</span>
+                                    <span id="wand-tolerance-val" class="font-bold text-accent-400">30</span>
+                                </div>
+                                <input type="range" id="wand-tolerance" min="1" max="100" value="30" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer">
+                                <p class="text-[9px] text-slate-500 leading-normal">Dica: Clique sobre o fundo ou cor da imagem para apagá-la.</p>
+                            </div>
+
+                            <div id="tool-settings-brush" class="hidden bg-slate-950/40 border border-slate-900 rounded-xl p-3 space-y-3">
+                                <div class="grid grid-cols-2 gap-2 bg-slate-900/50 p-1 rounded-lg">
+                                    <button id="btn-brush-erase" class="py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">Apagar</button>
+                                    <button id="btn-brush-restore" class="py-1 rounded-md text-[10px] font-bold text-center text-slate-400">Restaurar</button>
+                                </div>
+                                
+                                <div class="space-y-1">
+                                    <div class="flex items-center justify-between text-[10px] text-slate-300">
+                                        <span>Tamanho do Pincel:</span>
+                                        <span id="brush-size-val" class="font-bold text-accent-400">40px</span>
+                                    </div>
+                                    <input type="range" id="brush-size" min="5" max="150" value="40" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer">
+                                </div>
+
+                                <div class="space-y-1">
+                                    <div class="flex items-center justify-between text-[10px] text-slate-300">
+                                        <span>Dureza do Pincel:</span>
+                                        <span id="brush-hardness-val" class="font-bold text-accent-400">80%</span>
+                                    </div>
+                                    <input type="range" id="brush-hardness" min="0" max="100" value="80" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer">
+                                </div>
+                            </div>
+                        </div>
+
+                        <hr class="border-slate-900">
+
+                        <!-- BACKGROUND COLOR -->
+                        <div class="space-y-3">
+                            <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">3. Visualização do Fundo</span>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button id="btn-bg-transparent" class="active py-2 px-2 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5" disabled>
+                                    <i class="fa-solid fa-border-none text-[10px]"></i> Transparente
+                                </button>
+                                <button id="btn-bg-color" class="py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5" disabled>
+                                    <input type="color" id="bg-color-picker" value="#ffffff" class="w-3.5 h-3.5 border-0 rounded cursor-pointer p-0 bg-transparent"> Cor de Fundo
+                                </button>
+                            </div>
                         </div>
                     </div>
-                </div>
-
-                <!-- EXPORTAR -->
-                <div class="border-t border-slate-900/80 pt-3">
-                    <button id="btn-download" onclick="downloadResult()" disabled class="w-full py-2.5 px-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs shadow-lg shadow-emerald-500/10 transition flex items-center justify-center gap-1.5 disabled:opacity-50 disabled:cursor-not-allowed">
-                        <i class="fa-solid fa-cloud-arrow-down"></i>
-                        <span>Baixar em PNG</span>
-                    </button>
                 </div>
             </div>
+        `;
 
-            <!-- ÁREA DO WORKSPACE -->
-            <div class="flex-1 flex flex-col items-center justify-center bg-slate-950/40 relative p-4 select-none overflow-hidden rounded-3xl min-h-[400px]">
-                
-                <!-- ZONE DE UPLOAD -->
-                <div id="upload-zone" class="max-w-md w-full p-6 rounded-2xl border-2 border-dashed border-slate-800 bg-slate-950/20 text-center flex flex-col items-center justify-center cursor-pointer hover:border-accent-500 hover:bg-slate-950/40 transition group py-10"
-                     onclick="document.getElementById('file-input').click()">
-                    <input type="file" id="file-input" accept="image/*" class="hidden" onchange="handleFileSelect(event)">
-                    <div class="h-12 w-12 rounded-xl bg-accent-500/10 text-accent-400 flex items-center justify-center mb-4 group-hover:scale-110 transition duration-300">
-                        <i class="fa-solid fa-cloud-arrow-up text-2xl"></i>
-                    </div>
-                    <h3 class="text-sm font-bold text-white mb-1">Selecione uma imagem</h3>
-                    <p class="text-[10px] text-slate-500 max-w-xs leading-normal">Arraste e solte ou navegue nos seus arquivos.</p>
-                </div>
-
-                <!-- WORKSPACE DE EDIÇÃO -->
-                <div id="workspace" class="hidden w-full h-full relative flex flex-col items-center justify-center">
-                    
-                    <!-- Barra flutuante esquerda -->
-                    <div class="absolute top-2 left-2 z-10 flex items-center gap-1 p-1 rounded-lg bg-slate-950/90 border border-slate-900 backdrop-blur-md">
-                        <button onclick="setActiveTool('pan')" id="tool-btn-pan" class="h-7 w-7 rounded flex items-center justify-center text-accent-400 bg-accent-500/10 transition" title="Mover Foto">
-                            <i class="fa-solid fa-hand text-xs"></i>
-                        </button>
-                        <button onclick="setActiveTool('brush')" id="tool-btn-brush" class="h-7 w-7 rounded flex items-center justify-center text-slate-400 hover:text-white transition" title="Pincel Manual">
-                            <i class="fa-solid fa-paintbrush text-xs"></i>
-                        </button>
-                        <div class="h-3 w-px bg-slate-800 mx-1"></div>
-                        <button onclick="changeZoom(-0.2)" class="h-7 w-7 rounded flex items-center justify-center text-slate-400 hover:text-white transition">
-                            <i class="fa-solid fa-minus text-[10px]"></i>
-                        </button>
-                        <span id="zoom-indicator" class="text-[9px] text-slate-400 font-bold px-1 min-w-[32px] text-center">100%</span>
-                        <button onclick="changeZoom(0.2)" class="h-7 w-7 rounded flex items-center justify-center text-slate-400 hover:text-white transition">
-                            <i class="fa-solid fa-plus text-[10px]"></i>
-                        </button>
-                    </div>
-
-                    <!-- Comparador alternável -->
-                    <div class="absolute top-2 right-2 z-10 flex items-center gap-1 p-1 rounded-lg bg-slate-950/90 border border-slate-900 backdrop-blur-md">
-                        <button onclick="setViewMode('split')" id="view-btn-split" class="px-2 py-0.5 rounded text-[9px] font-bold text-accent-400 bg-accent-500/10 transition">Split</button>
-                        <button onclick="setViewMode('result')" id="view-btn-result" class="px-2 py-0.5 rounded text-[9px] font-bold text-slate-400 hover:text-white transition">Fundo</button>
-                        <button onclick="setViewMode('original')" id="view-btn-original" class="px-2 py-0.5 rounded text-[9px] font-bold text-slate-400 hover:text-white transition">Original</button>
-                    </div>
-
-                    <!-- Canvas e Viewport -->
-                    <div id="canvas-container" class="w-full h-full flex items-center justify-center relative cursor-grab overflow-hidden"
-                         onmousedown="handleCanvasMouseDown(event)"
-                         onmousemove="handleCanvasMouseMove(event)"
-                         onmouseup="handleCanvasMouseUp(event)"
-                         onmouseleave="handleCanvasMouseUp(event)">
-                        
-                        <div id="preview-viewport" class="relative overflow-hidden transparency-bg select-none shadow-2xl rounded-xl border border-slate-900 flex items-center justify-center" style="width: 350px; height: 350px;">
-                            <canvas id="workspace-canvas" class="max-w-full max-h-full pointer-events-none"></canvas>
-                            <div id="brush-cursor" class="absolute pointer-events-none rounded-full border border-white bg-white/20 hidden" style="width: 30px; height: 30px; transform: translate(-50%, -50%);"></div>
-                        </div>
-                    </div>
-
-                    <!-- Slider dividida horizontal -->
-                    <div id="split-slider-container" class="absolute bottom-4 w-3/4 max-w-xs z-10 bg-slate-950/80 border border-slate-900 px-3 py-2 rounded-full flex items-center gap-2 shadow-lg">
-                        <input type="range" id="split-control" min="0" max="100" value="50" oninput="onSplitChange(this.value)" class="flex-1">
-                    </div>
-                </div>
-
-                <!-- LOADING INTERNO -->
-                <div id="tool-loader" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-50 rounded-3xl">
-                    <div class="animate-spin rounded-full h-10 w-10 border-t-2 border-b-2 border-accent-500 mb-3"></div>
-                    <h4 id="loader-tool-title" class="text-xs font-bold text-white mb-1">Processando</h4>
-                    <p id="loader-tool-desc" class="text-[10px] text-slate-400 max-w-xs text-center leading-normal">Carregando...</p>
-                </div>
-
-            </div>
-        </div>
-    `;
-
-    // Map DOM elements to state
-    bgRemoverState.workspaceCanvas = document.getElementById('workspace-canvas');
-    bgRemoverState.workspaceCtx = bgRemoverState.workspaceCanvas.getContext('2d');
-}
-
-// HANDLERS SELECT FILE
-function handleFileSelect(e) {
-    const file = e.target.files[0];
-    if (file) loadImage(file);
-}
-
-function loadImage(fileOrBlob) {
-    bgRemoverState.currentFileOrBlob = fileOrBlob;
-    const reader = new FileReader();
-    reader.onload = function(e) {
-        const img = new Image();
-        img.onload = function() {
-            bgRemoverState.originalImage = img;
-            
-            // Build memory canvases
-            const w = img.naturalWidth;
-            const h = img.naturalHeight;
-            bgRemoverState.maskCanvas = document.createElement('canvas');
-            bgRemoverState.maskCanvas.width = w;
-            bgRemoverState.maskCanvas.height = h;
-            bgRemoverState.maskCtx = bgRemoverState.maskCanvas.getContext('2d');
-            
-            bgRemoverState.maskCtx.fillStyle = '#ffffff';
-            bgRemoverState.maskCtx.fillRect(0, 0, w, h);
-
-            bgRemoverState.workspaceCanvas.width = w;
-            bgRemoverState.workspaceCanvas.height = h;
-
-            document.getElementById('upload-zone').classList.add('hidden');
-            document.getElementById('workspace').classList.remove('hidden');
-            document.getElementById('btn-download').disabled = false;
-            
-            resetView();
-            renderWorkspace();
-        };
-        img.src = e.target.result;
+        // Load listeners
+        setupEventListeners();
     };
-    reader.readAsDataURL(fileOrBlob);
-}
 
-// MEDIAPIPE SEGMENTATION EXECUTION
-function runMediaPipeRemoval() {
-    if (!bgRemoverState.originalImage) {
-        showNotification("Selecione uma imagem primeiro.");
-        return;
-    }
+    function setupEventListeners() {
+        const uploader = document.getElementById('file-uploader');
+        const uploadPlaceholder = document.getElementById('upload-placeholder');
+        const workspace = document.getElementById('workspace-container');
 
-    showInternalLoader("MediaPipe AI", "Isolando sujeito...");
+        // Drag & Drop
+        uploadPlaceholder.addEventListener('click', () => uploader.click());
+        uploader.addEventListener('change', handleFileSelect);
 
-    const selfieSegmentation = new SelfieSegmentation({
-        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
-    });
-
-    selfieSegmentation.setOptions({ modelSelection: 1 });
-
-    selfieSegmentation.onResults((results) => {
-        try {
-            const w = bgRemoverState.originalImage.naturalWidth;
-            const h = bgRemoverState.originalImage.naturalHeight;
-
-            bgRemoverState.maskCtx.clearRect(0, 0, w, h);
-            bgRemoverState.maskCtx.drawImage(results.segmentationMask, 0, 0, w, h);
-            
-            const imgData = bgRemoverState.maskCtx.getImageData(0, 0, w, h);
-            const data = imgData.data;
-            for (let i = 0; i < data.length; i += 4) {
-                const prob = data[i];
-                const val = prob > 128 ? 255 : 0; 
-                data[i] = 255;
-                data[i+1] = 255;
-                data[i+2] = 255;
-                data[i+3] = val; 
+        workspace.addEventListener('dragover', (e) => {
+            e.preventDefault();
+            workspace.classList.add('border-accent-500/50', 'bg-accent-500/5');
+        });
+        workspace.addEventListener('dragleave', () => {
+            workspace.classList.remove('border-accent-500/50', 'bg-accent-500/5');
+        });
+        workspace.addEventListener('drop', (e) => {
+            e.preventDefault();
+            workspace.classList.remove('border-accent-500/50', 'bg-accent-500/5');
+            if (e.dataTransfer.files.length > 0) {
+                uploader.files = e.dataTransfer.files;
+                handleFileSelect({ target: uploader });
             }
-            bgRemoverState.maskCtx.putImageData(imgData, 0, 0);
+        });
 
-            hideInternalLoader();
-            renderWorkspace();
-            showNotification("Fundo removido com sucesso!");
-        } catch(err) {
-            console.error(err);
-            hideInternalLoader();
-            showNotification("Falha ao binarizar máscara da IA.");
-        }
-    });
-
-    setTimeout(() => {
-        selfieSegmentation.send({ image: bgRemoverState.originalImage })
-            .catch(err => {
-                hideInternalLoader();
-                showNotification("Erro na IA local.");
+        // Engine Select Labels
+        const lblPeople = document.getElementById('lbl-engine-people');
+        const lblObjects = document.getElementById('lbl-engine-objects');
+        document.querySelectorAll('input[name="ai-engine"]').forEach(radio => {
+            radio.addEventListener('change', (e) => {
+                if (e.target.value === 'mediapipe') {
+                    lblPeople.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white";
+                    lblObjects.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200";
+                } else {
+                    lblObjects.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white";
+                    lblPeople.className = "cursor-pointer flex items-center justify-center gap-1.5 py-2 px-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200";
+                }
             });
-    }, 400);
-}
+        });
 
-// CANVAS DRAW & WORKSPACE COMPOSITES
-function renderWorkspace() {
-    if (!bgRemoverState.originalImage || !bgRemoverState.workspaceCanvas) return;
+        // Action Buttons
+        document.getElementById('btn-run-ai').addEventListener('click', runAiBackgroundRemoval);
+        document.getElementById('btn-reset-mask').addEventListener('click', resetMask);
+        document.getElementById('btn-download-result').addEventListener('click', downloadPNG);
+        document.getElementById('btn-show-split').addEventListener('click', toggleSplitScreen);
 
-    const w = bgRemoverState.originalImage.naturalWidth;
-    const h = bgRemoverState.originalImage.naturalHeight;
-    const ctx = bgRemoverState.workspaceCtx;
+        // Tool Modes Selection
+        document.getElementById('btn-tool-pan').addEventListener('click', () => setToolMode('pan'));
+        document.getElementById('btn-tool-wand').addEventListener('click', () => setToolMode('wand'));
+        document.getElementById('btn-tool-brush').addEventListener('click', () => setToolMode('brush'));
 
-    ctx.clearRect(0, 0, w, h);
+        // Wand settings
+        const wandToleranceInput = document.getElementById('wand-tolerance');
+        wandToleranceInput.addEventListener('input', (e) => {
+            state.magicWandTolerance = parseInt(e.target.value);
+            document.getElementById('wand-tolerance-val').innerText = state.magicWandTolerance;
+        });
 
-    if (bgRemoverState.viewMode === 'original') {
-        ctx.drawImage(bgRemoverState.originalImage, 0, 0);
-        return;
+        // Brush settings
+        const brushSizeInput = document.getElementById('brush-size');
+        brushSizeInput.addEventListener('input', (e) => {
+            state.brushSize = parseInt(e.target.value);
+            document.getElementById('brush-size-val').innerText = `${state.brushSize}px`;
+        });
+        const brushHardnessInput = document.getElementById('brush-hardness');
+        brushHardnessInput.addEventListener('input', (e) => {
+            state.brushHardness = parseFloat(e.target.value) / 100;
+            document.getElementById('brush-hardness-val').innerText = `${e.target.value}%`;
+        });
+        document.getElementById('btn-brush-erase').addEventListener('click', () => setBrushMode('erase'));
+        document.getElementById('btn-brush-restore').addEventListener('click', () => setBrushMode('restore'));
+
+        // BG Visual Toggle
+        const btnTrans = document.getElementById('btn-bg-transparent');
+        const btnColor = document.getElementById('btn-bg-color');
+        const colorPicker = document.getElementById('bg-color-picker');
+
+        btnTrans.addEventListener('click', () => {
+            state.bgColorType = 'transparent';
+            btnTrans.className = "active py-2 px-2 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5";
+            btnColor.className = "py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5";
+            renderWorkspace();
+        });
+
+        btnColor.addEventListener('click', () => {
+            state.bgColorType = 'color';
+            btnColor.className = "active py-2 px-2 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center justify-center gap-1.5";
+            btnTrans.className = "py-2 px-2 rounded-xl border border-slate-800 bg-slate-900/30 text-xs text-slate-400 transition flex items-center justify-center gap-1.5";
+            renderWorkspace();
+        });
+
+        colorPicker.addEventListener('input', (e) => {
+            state.bgColorValue = e.target.value;
+            if (state.bgColorType === 'color') renderWorkspace();
+        });
+
+        // Canvas interactions
+        const canvas = document.getElementById('canvas-bg-remover');
+        canvas.addEventListener('mousedown', canvasMouseDown);
+        canvas.addEventListener('mousemove', canvasMouseMove);
+        window.addEventListener('mouseup', canvasMouseUp);
+        canvas.addEventListener('wheel', canvasWheel);
     }
 
-    // Masked foreground
-    const fgCanvas = document.createElement('canvas');
-    fgCanvas.width = w;
-    fgCanvas.height = h;
-    const fgCtx = fgCanvas.getContext('2d');
-    fgCtx.drawImage(bgRemoverState.originalImage, 0, 0);
-    fgCtx.globalCompositeOperation = 'destination-in';
-    fgCtx.drawImage(bgRemoverState.maskCanvas, 0, 0);
+    function handleFileSelect(e) {
+        const file = e.target.files[0];
+        if (!file) return;
+        state.currentFile = file;
 
-    if (bgRemoverState.viewMode === 'result') {
-        drawSelectedBg(ctx, w, h);
-        ctx.drawImage(fgCanvas, 0, 0);
-    } else if (bgRemoverState.viewMode === 'split') {
-        ctx.drawImage(bgRemoverState.originalImage, 0, 0);
+        showInternalLoader('Carregando...', 'Renderizando imagem selecionada no espaço de trabalho.');
 
-        const rightCanvas = document.createElement('canvas');
-        rightCanvas.width = w;
-        rightCanvas.height = h;
-        const rCtx = rightCanvas.getContext('2d');
-        drawSelectedBg(rCtx, w, h);
-        rCtx.drawImage(fgCanvas, 0, 0);
+        const reader = new FileReader();
+        reader.onload = function(event) {
+            const img = new Image();
+            img.onload = function() {
+                state.originalImage = img;
+                
+                // Initialize Canvases
+                state.workspaceCanvas = document.getElementById('canvas-bg-remover');
+                state.workspaceCtx = state.workspaceCanvas.getContext('2d');
 
-        const splitPixel = (bgRemoverState.splitValue / 100) * w;
-        ctx.save();
-        ctx.beginPath();
-        ctx.rect(splitPixel, 0, w - splitPixel, h);
-        ctx.clip();
-        ctx.drawImage(rightCanvas, 0, 0);
-        ctx.restore();
+                // Mask Canvas (contains user alpha mask)
+                state.maskCanvas = document.createElement('canvas');
+                state.maskCanvas.width = img.naturalWidth;
+                state.maskCanvas.height = img.naturalHeight;
+                state.maskCtx = state.maskCanvas.getContext('2d');
 
-        // Divider
-        ctx.strokeStyle = '#7c3aed';
-        ctx.lineWidth = 4 / bgRemoverState.zoom;
-        ctx.beginPath();
-        ctx.moveTo(splitPixel, 0);
-        ctx.lineTo(splitPixel, h);
-        ctx.stroke();
-    }
-}
+                // Initialize all to opaque white
+                state.maskCtx.fillStyle = '#ffffff';
+                state.maskCtx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
 
-function drawSelectedBg(ctx, w, h) {
-    if (bgRemoverState.bgType === 'transparent') {
-        ctx.clearRect(0, 0, w, h);
-    } else if (bgRemoverState.bgType === 'solid') {
-        ctx.fillStyle = bgRemoverState.bgSolidColor;
-        ctx.fillRect(0, 0, w, h);
-    }
-}
+                // Setup layout dims
+                state.workspaceCanvas.width = img.naturalWidth;
+                state.workspaceCanvas.height = img.naturalHeight;
+                state.workspaceCanvas.classList.remove('hidden');
 
-// ZOOM / NAVEGATION UTILITIES
-function changeZoom(delta) {
-    bgRemoverState.zoom = Math.max(0.1, Math.min(5, bgRemoverState.zoom + delta));
-    document.getElementById('zoom-indicator').innerText = `${Math.round(bgRemoverState.zoom * 100)}%`;
-    updateViewportTransform();
-}
+                document.getElementById('upload-placeholder').classList.add('hidden');
+                
+                // Reset zoom and offset
+                resetZoomOffset();
 
-function resetView() {
-    if (!bgRemoverState.originalImage) return;
-    const container = document.getElementById('canvas-container');
-    const cw = container.clientWidth;
-    const ch = container.clientHeight;
-    const iw = bgRemoverState.originalImage.naturalWidth;
-    const ih = bgRemoverState.originalImage.naturalHeight;
+                // Enable buttons
+                document.getElementById('btn-run-ai').removeAttribute('disabled');
+                document.getElementById('btn-reset-mask').removeAttribute('disabled');
+                document.getElementById('btn-download-result').removeAttribute('disabled');
+                document.getElementById('btn-show-split').removeAttribute('disabled');
+                document.getElementById('btn-tool-pan').removeAttribute('disabled');
+                document.getElementById('btn-tool-wand').removeAttribute('disabled');
+                document.getElementById('btn-tool-brush').removeAttribute('disabled');
+                document.getElementById('btn-bg-transparent').removeAttribute('disabled');
+                document.getElementById('btn-bg-color').removeAttribute('disabled');
 
-    const zoomX = (cw - 40) / iw;
-    const zoomY = (ch - 40) / ih;
-    bgRemoverState.zoom = Math.min(zoomX, zoomY, 1.0);
-    bgRemoverState.panX = 0;
-    bgRemoverState.panY = 0;
-
-    document.getElementById('zoom-indicator').innerText = `${Math.round(bgRemoverState.zoom * 100)}%`;
-    updateViewportTransform();
-}
-
-function updateViewportTransform() {
-    const viewport = document.getElementById('preview-viewport');
-    if (bgRemoverState.originalImage) {
-        viewport.style.width = `${bgRemoverState.originalImage.naturalWidth}px`;
-        viewport.style.height = `${bgRemoverState.originalImage.naturalHeight}px`;
-    }
-    viewport.style.transform = `scale(${bgRemoverState.zoom}) translate(${bgRemoverState.panX}px, ${bgRemoverState.panY}px)`;
-}
-
-// MOUSE EVENTS
-function handleCanvasMouseDown(e) {
-    if (!bgRemoverState.originalImage) return;
-    if (bgRemoverState.currentTool === 'pan') {
-        bgRemoverState.isDragging = true;
-        bgRemoverState.startX = e.clientX - bgRemoverState.panX * bgRemoverState.zoom;
-        bgRemoverState.startY = e.clientY - bgRemoverState.panY * bgRemoverState.zoom;
-        document.getElementById('canvas-container').style.cursor = 'grabbing';
-    } else if (bgRemoverState.currentTool === 'brush') {
-        bgRemoverState.isDrawing = true;
-        paintBrushStroke(e);
-    }
-}
-
-function handleCanvasMouseMove(e) {
-    if (!bgRemoverState.originalImage) return;
-    if (bgRemoverState.currentTool === 'brush') {
-        const viewport = document.getElementById('preview-viewport');
-        const rect = viewport.getBoundingClientRect();
-        const cursor = document.getElementById('brush-cursor');
-        const scaledSize = bgRemoverState.brushSize * bgRemoverState.zoom;
-        
-        cursor.style.width = `${scaledSize}px`;
-        cursor.style.height = `${scaledSize}px`;
-        cursor.style.left = `${e.clientX - rect.left}px`;
-        cursor.style.top = `${e.clientY - rect.top}px`;
-        cursor.classList.remove('hidden');
-
-        if (bgRemoverState.isDrawing) paintBrushStroke(e);
-    } else {
-        document.getElementById('brush-cursor').classList.add('hidden');
+                hideInternalLoader();
+                renderWorkspace();
+            };
+            img.src = event.target.result;
+        };
+        reader.readAsDataURL(file);
     }
 
-    if (bgRemoverState.isDragging) {
-        bgRemoverState.panX = (e.clientX - bgRemoverState.startX) / bgRemoverState.zoom;
-        bgRemoverState.panY = (e.clientY - bgRemoverState.startY) / bgRemoverState.zoom;
-        updateViewportTransform();
-    }
-}
+    function resetZoomOffset() {
+        if (!state.originalImage) return;
+        const container = document.getElementById('workspace-container');
+        const contW = container.clientWidth - 32;
+        const contH = container.clientHeight - 32;
+        const imgW = state.originalImage.naturalWidth;
+        const imgH = state.originalImage.naturalHeight;
 
-function handleCanvasMouseUp() {
-    bgRemoverState.isDragging = false;
-    bgRemoverState.isDrawing = false;
-    if (bgRemoverState.currentTool === 'pan') {
-        document.getElementById('canvas-container').style.cursor = 'grab';
-    }
-}
-
-function paintBrushStroke(e) {
-    const rect = bgRemoverState.workspaceCanvas.getBoundingClientRect();
-    const scaleX = bgRemoverState.originalImage.naturalWidth / rect.width;
-    const scaleY = bgRemoverState.originalImage.naturalHeight / rect.height;
-    const px = (e.clientX - rect.left) * scaleX;
-    const py = (e.clientY - rect.top) * scaleY;
-
-    const ctx = bgRemoverState.maskCtx;
-    ctx.save();
-    
-    const grad = ctx.createRadialGradient(px, py, bgRemoverState.brushSize * bgRemoverState.brushHardness / 2, px, py, bgRemoverState.brushSize / 2);
-    
-    if (bgRemoverState.brushMode === 'erase') {
-        grad.addColorStop(0, 'rgba(0,0,0,1)');
-        grad.addColorStop(1, 'rgba(0,0,0,0)');
-        ctx.globalCompositeOperation = 'destination-out';
-    } else {
-        grad.addColorStop(0, 'rgba(255,255,255,1)');
-        grad.addColorStop(1, 'rgba(255,255,255,0)');
-        ctx.globalCompositeOperation = 'source-over';
+        state.zoomScale = Math.min(contW / imgW, contH / imgH, 1.0);
+        state.zoomOffset = { x: 0, y: 0 };
     }
 
-    ctx.fillStyle = grad;
-    ctx.beginPath();
-    ctx.arc(px, py, bgRemoverState.brushSize / 2, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.restore();
+    function setToolMode(mode) {
+        state.activeAction = mode;
+        document.querySelectorAll('.tool-btn').forEach(btn => {
+            btn.className = "tool-btn p-2.5 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 text-xs text-slate-400 font-medium transition flex flex-col items-center gap-1.5";
+        });
+        document.getElementById(`btn-tool-${mode}`).className = "tool-btn active p-2.5 rounded-xl border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 font-medium transition flex flex-col items-center gap-1.5";
 
-    renderWorkspace();
-}
+        document.getElementById('tool-settings-wand').classList.add('hidden');
+        document.getElementById('tool-settings-brush').classList.add('hidden');
 
-function setActiveTool(tool) {
-    bgRemoverState.currentTool = tool;
-    document.getElementById('tool-btn-pan').className = "h-7 w-7 rounded flex items-center justify-center text-slate-400 hover:text-white transition";
-    document.getElementById('tool-btn-brush').className = "h-7 w-7 rounded flex items-center justify-center text-slate-400 hover:text-white transition";
-
-    if (tool === 'pan') {
-        document.getElementById('tool-btn-pan').className = "h-7 w-7 rounded flex items-center justify-center text-accent-400 bg-accent-500/10 transition";
-        document.getElementById('canvas-container').style.cursor = 'grab';
-    } else if (tool === 'brush') {
-        document.getElementById('tool-btn-brush').className = "h-7 w-7 rounded flex items-center justify-center text-accent-400 bg-accent-500/10 transition";
-        document.getElementById('canvas-container').style.cursor = 'crosshair';
-    }
-}
-
-function changeBgType(type) {
-    bgRemoverState.bgType = type;
-    document.getElementById('bg-btn-transparent').className = "p-2 border border-slate-900 hover:border-slate-800 text-[10px] text-slate-400 font-bold rounded-lg transition flex flex-col items-center gap-1";
-    document.getElementById('bg-btn-solid').className = "p-2 border border-slate-900 hover:border-slate-800 text-[10px] text-slate-400 font-bold rounded-lg transition flex flex-col items-center gap-1";
-
-    document.getElementById(`bg-btn-${type}`).className = "p-2 border border-accent-500 bg-accent-500/10 text-[10px] text-accent-400 font-bold rounded-lg transition flex flex-col items-center gap-1";
-
-    document.getElementById('panel-bg-solid').classList.add('hidden');
-    if (type === 'solid') {
-        document.getElementById('panel-bg-solid').classList.remove('hidden');
-    }
-    
-    setViewMode('result');
-    renderWorkspace();
-}
-
-function setSolidBgColor(color) {
-    bgRemoverState.bgSolidColor = color;
-    renderWorkspace();
-}
-
-function onSplitChange(val) {
-    bgRemoverState.splitValue = val;
-    renderWorkspace();
-}
-
-function setViewMode(mode) {
-    bgRemoverState.viewMode = mode;
-    document.getElementById('view-btn-split').className = "px-2 py-0.5 rounded text-[9px] font-bold text-slate-400 hover:text-white transition";
-    document.getElementById('view-btn-result').className = "px-2 py-0.5 rounded text-[9px] font-bold text-slate-400 hover:text-white transition";
-    document.getElementById('view-btn-original').className = "px-2 py-0.5 rounded text-[9px] font-bold text-slate-400 hover:text-white transition";
-
-    document.getElementById(`view-btn-${mode}`).className = "px-2 py-0.5 rounded text-[9px] font-bold text-accent-400 bg-accent-500/10 transition";
-
-    if (mode === 'split') {
-        document.getElementById('split-slider-container').classList.remove('hidden');
-    } else {
-        document.getElementById('split-slider-container').classList.add('hidden');
-    }
-    renderWorkspace();
-}
-
-// EXPORT TO PNG
-function downloadResult() {
-    if (!bgRemoverState.originalImage) return;
-
-    showInternalLoader("Exportando", "Montando camadas em alta resolução...");
-
-    setTimeout(() => {
-        const w = bgRemoverState.originalImage.naturalWidth;
-        const h = bgRemoverState.originalImage.naturalHeight;
-
-        const expCanvas = document.createElement('canvas');
-        expCanvas.width = w;
-        expCanvas.height = h;
-        const expCtx = expCanvas.getContext('2d');
-
-        if (bgRemoverState.bgType !== 'transparent') {
-            drawSelectedBg(expCtx, w, h);
+        if (mode === 'wand') {
+            document.getElementById('tool-settings-wand').classList.remove('hidden');
+        } else if (mode === 'brush') {
+            document.getElementById('tool-settings-brush').classList.remove('hidden');
         }
+    }
 
+    function setBrushMode(mode) {
+        state.brushMode = mode;
+        const btnErase = document.getElementById('btn-brush-erase');
+        const btnRestore = document.getElementById('btn-brush-restore');
+
+        if (mode === 'erase') {
+            btnErase.className = "py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
+            btnRestore.className = "py-1 rounded-md text-[10px] font-bold text-center text-slate-400";
+        } else {
+            btnRestore.className = "py-1 rounded-md text-[10px] font-bold text-center bg-indigo-500/20 text-indigo-300 border border-indigo-500/30";
+            btnErase.className = "py-1 rounded-md text-[10px] font-bold text-center text-slate-400";
+        }
+    }
+
+    function renderWorkspace() {
+        if (!state.originalImage || !state.workspaceCanvas) return;
+
+        const canvas = state.workspaceCanvas;
+        const ctx = state.workspaceCtx;
+        const w = canvas.width;
+        const h = canvas.height;
+
+        ctx.clearRect(0, 0, w, h);
+
+        // Temp canvas to construct current state
         const tempCanvas = document.createElement('canvas');
         tempCanvas.width = w;
         tempCanvas.height = h;
         const tempCtx = tempCanvas.getContext('2d');
-        tempCtx.drawImage(bgRemoverState.originalImage, 0, 0);
+
+        // Draw original
+        tempCtx.drawImage(state.originalImage, 0, 0);
+
+        // Apply alpha mask
         tempCtx.globalCompositeOperation = 'destination-in';
-        tempCtx.drawImage(bgRemoverState.maskCanvas, 0, 0);
+        tempCtx.drawImage(state.maskCanvas, 0, 0);
+        tempCtx.globalCompositeOperation = 'source-over';
 
-        expCtx.drawImage(tempCanvas, 0, 0);
-
-        try {
-            const dataUrl = expCanvas.toDataURL('image/png');
-            const link = document.createElement('a');
-            link.download = `OmniTool_Studio_${Date.now()}.png`;
-            link.href = dataUrl;
-            document.body.appendChild(link);
-            link.click();
-            document.body.removeChild(link);
-            hideInternalLoader();
-            showNotification("Imagem salva!");
-        } catch(err) {
-            hideInternalLoader();
-            showNotification("Falha na exportação.");
+        // Draw Checkerboard or Background Color on output
+        if (state.bgColorType === 'transparent') {
+            // Draw transparent checkers
+            drawCheckerboard(ctx, w, h);
+        } else {
+            ctx.fillStyle = state.bgColorValue;
+            ctx.fillRect(0, 0, w, h);
         }
-    }, 200);
-}
 
-// LOADER HELPERS
-function showInternalLoader(title, desc) {
-    document.getElementById('loader-tool-title').innerText = title;
-    document.getElementById('loader-tool-desc').innerText = desc;
-    document.getElementById('tool-loader').classList.remove('hidden');
-}
+        // Draw current result
+        if (state.showSplit) {
+            // Split screen logic
+            const splitX = w * state.splitOffset;
 
-function hideInternalLoader() {
-    document.getElementById('tool-loader').classList.add('hidden');
-}
+            // Draw original on left side
+            ctx.drawImage(state.originalImage, 0, 0, splitX, h, 0, 0, splitX, h);
+
+            // Draw masked result on right side
+            ctx.drawImage(tempCanvas, splitX, 0, w - splitX, h, splitX, 0, w - splitX, h);
+
+            // Split line
+            ctx.strokeStyle = '#7c3aed';
+            ctx.lineWidth = 4 / state.zoomScale;
+            ctx.beginPath();
+            ctx.moveTo(splitX, 0);
+            ctx.lineTo(splitX, h);
+            ctx.stroke();
+
+            // Handle handle circle
+            ctx.fillStyle = '#7c3aed';
+            ctx.beginPath();
+            ctx.arc(splitX, h / 2, 16 / state.zoomScale, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.fillStyle = '#ffffff';
+            ctx.beginPath();
+            ctx.arc(splitX, h / 2, 6 / state.zoomScale, 0, Math.PI * 2);
+            ctx.fill();
+        } else {
+            // Full masked image
+            ctx.drawImage(tempCanvas, 0, 0);
+        }
+    }
+
+    function drawCheckerboard(ctx, w, h) {
+        const size = 15;
+        const cols = Math.ceil(w / size);
+        const rows = Math.ceil(h / size);
+        for (let r = 0; r < rows; r++) {
+            for (let c = 0; c < cols; c++) {
+                ctx.fillStyle = (r + c) % 2 === 0 ? '#1e293b' : '#0f172a';
+                ctx.fillRect(c * size, r * size, size, size);
+            }
+        }
+    }
+
+    function toggleSplitScreen() {
+        state.showSplit = !state.showSplit;
+        const btn = document.getElementById('btn-show-split');
+        if (state.showSplit) {
+            btn.className = "px-3 py-1.5 rounded-lg border border-indigo-500 bg-indigo-950/20 text-xs text-indigo-300 transition flex items-center gap-1.5";
+        } else {
+            btn.className = "px-3 py-1.5 rounded-lg border border-slate-800 bg-slate-900/30 text-xs text-slate-300 hover:bg-slate-800 transition flex items-center gap-1.5";
+        }
+        renderWorkspace();
+    }
+
+    // AI ENGINES RUNNERS
+    function runAiBackgroundRemoval() {
+        if (!state.originalImage) return;
+
+        const engine = document.querySelector('input[name="ai-engine"]:checked').value;
+        if (engine === 'mediapipe') {
+            runMediaPipe();
+        } else {
+            runImgly();
+        }
+    }
+
+    function runMediaPipe() {
+        showInternalLoader('MediaPipe AI', 'Isolando silhueta humana no WebGL...', 30);
+        try {
+            const selfieSegmentation = new SelfieSegmentation({
+                locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+            });
+
+            selfieSegmentation.setOptions({
+                modelSelection: 1 // General / Landscape
+            });
+
+            selfieSegmentation.onResults((results) => {
+                try {
+                    const w = state.originalImage.naturalWidth;
+                    const h = state.originalImage.naturalHeight;
+
+                    state.maskCtx.clearRect(0, 0, w, h);
+                    state.maskCtx.drawImage(results.segmentationMask, 0, 0, w, h);
+
+                    const imgData = state.maskCtx.getImageData(0, 0, w, h);
+                    const data = imgData.data;
+                    for (let i = 0; i < data.length; i += 4) {
+                        const prob = data[i];
+                        const val = prob > 128 ? 255 : 0;
+                        data[i] = 255;
+                        data[i+1] = 255;
+                        data[i+2] = 255;
+                        data[i+3] = val; // Apply alpha
+                    }
+                    state.maskCtx.putImageData(imgData, 0, 0);
+
+                    cacheAiMask();
+                    hideInternalLoader();
+                    renderWorkspace();
+                    if (typeof showNotification === 'function') showNotification("Fundo de pessoa removido com sucesso!");
+                } catch (e) {
+                    console.error(e);
+                    hideInternalLoader();
+                    if (typeof showNotification === 'function') showNotification("Erro ao processar máscara da IA.");
+                }
+            });
+
+            setTimeout(() => {
+                selfieSegmentation.send({ image: state.originalImage })
+                    .catch(err => {
+                        console.error(err);
+                        hideInternalLoader();
+                        if (typeof showNotification === 'function') showNotification("MediaPipe falhou. Experimente o motor de Objetos.");
+                    });
+            }, 300);
+
+        } catch (e) {
+            console.error(e);
+            hideInternalLoader();
+            if (typeof showNotification === 'function') showNotification("Não foi possível iniciar o MediaPipe.");
+        }
+    }
+
+    async function runImgly() {
+        if (!window.imglyRemoveBackground) {
+            showInternalLoader('Iniciando Motor', 'Carregando arquivos da IA de objetos (IMG.LY)...', 10);
+            
+            let check = setInterval(() => {
+                if (window.imglyRemoveBackground) {
+                    clearInterval(check);
+                    hideInternalLoader();
+                    runImglyRemovalLogic();
+                }
+            }, 1000);
+
+            setTimeout(() => {
+                clearInterval(check);
+                if (!window.imglyRemoveBackground) {
+                    hideInternalLoader();
+                    if (typeof showNotification === 'function') showNotification("A biblioteca IMG.LY demorou demais para responder.");
+                }
+            }, 20000);
+            return;
+        }
+
+        runImglyRemovalLogic();
+    }
+
+    async function runImglyRemovalLogic() {
+        showInternalLoader('IMG.LY AI', 'Isolando objetos gerais... (Isso pode levar de 5 a 15 segundos)', 10);
+        try {
+            const blob = await window.imglyRemoveBackground(state.currentFile, {
+                model: 'isnet_quint8', // Faster model
+                device: 'cpu', // Safer fallback inside sandbox
+                proxyToWorker: false, // Avoid worker sandbox errors
+                progress: (key, current, total) => {
+                    const pct = Math.round((current / total) * 100);
+                    updateLoaderProgress(pct, `Fazendo download do modelo: ${pct}%`);
+                }
+            });
+
+            updateLoaderProgress(95, "Finalizando processamento...");
+            const url = URL.createObjectURL(blob);
+            const resImg = new Image();
+            resImg.onload = function() {
+                const w = state.originalImage.naturalWidth;
+                const h = state.originalImage.naturalHeight;
+
+                const temp = document.createElement('canvas');
+                temp.width = w;
+                temp.height = h;
+                const tempCtx = temp.getContext('2d');
+                tempCtx.drawImage(resImg, 0, 0, w, h);
+
+                const imgData = tempCtx.getImageData(0, 0, w, h);
+                const data = imgData.data;
+
+                state.maskCtx.clearRect(0, 0, w, h);
+                for (let i = 0; i < data.length; i += 4) {
+                    const alpha = data[i+3];
+                    const val = alpha > 10 ? 255 : 0;
+                    data[i] = 255;
+                    data[i+1] = 255;
+                    data[i+2] = 255;
+                    data[i+3] = val;
+                }
+                state.maskCtx.putImageData(imgData, 0, 0);
+
+                cacheAiMask();
+                hideInternalLoader();
+                renderWorkspace();
+                if (typeof showNotification === 'function') showNotification("Fundo de objeto removido com sucesso!");
+            };
+            resImg.src = url;
+
+        } catch (err) {
+            console.error(err);
+            hideInternalLoader();
+            if (typeof showNotification === 'function') showNotification("Falha no motor de Objetos.");
+        }
+    }
+
+    function cacheAiMask() {
+        state.aiMaskCache = document.createElement('canvas');
+        state.aiMaskCache.width = state.maskCanvas.width;
+        state.aiMaskCache.height = state.maskCanvas.height;
+        state.aiMaskCache.getContext('2d').drawImage(state.maskCanvas, 0, 0);
+    }
+
+    function resetMask() {
+        if (!state.originalImage) return;
+        state.maskCtx.fillStyle = '#ffffff';
+        state.maskCtx.fillRect(0, 0, state.originalImage.naturalWidth, state.originalImage.naturalHeight);
+        renderWorkspace();
+        if (typeof showNotification === 'function') showNotification("Máscara restaurada para o original.");
+    }
+
+    // INTERACTIVE MOUSE HANDLERS
+    function canvasMouseDown(e) {
+        if (!state.originalImage) return;
+
+        const rect = state.workspaceCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        if (state.activeAction === 'pan') {
+            state.isPanning = true;
+            state.lastMousePos = { x: e.clientX, y: e.clientY };
+        } else if (state.activeAction === 'wand') {
+            applyMagicWand(mouseX, mouseY);
+        } else if (state.activeAction === 'brush') {
+            state.isDrawing = true;
+            drawBrushStroke(mouseX, mouseY, true);
+        }
+    }
+
+    function canvasMouseMove(e) {
+        if (!state.originalImage) return;
+
+        const rect = state.workspaceCanvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        if (state.isPanning) {
+            const dx = e.clientX - state.lastMousePos.x;
+            const dy = e.clientY - state.lastMousePos.y;
+            state.zoomOffset.x += dx;
+            state.zoomOffset.y += dy;
+            state.lastMousePos = { x: e.clientX, y: e.clientY };
+            updateCanvasTransforms();
+        } else if (state.isDrawing && state.activeAction === 'brush') {
+            drawBrushStroke(mouseX, mouseY, false);
+        } else if (state.showSplit && state.activeAction === 'pan') {
+            // Handle split slider drag
+            const pct = mouseX / rect.width;
+            state.splitOffset = Math.max(0, Math.min(1, pct));
+            renderWorkspace();
+        }
+    }
+
+    function canvasMouseUp() {
+        state.isPanning = false;
+        state.isDrawing = false;
+    }
+
+    function canvasWheel(e) {
+        e.preventDefault();
+        if (!state.originalImage) return;
+
+        const zoomFactor = 1.1;
+        if (e.deltaY < 0) {
+            state.zoomScale *= zoomFactor;
+        } else {
+            state.zoomScale /= zoomFactor;
+        }
+        state.zoomScale = Math.max(0.1, Math.min(10.0, state.zoomScale));
+        updateCanvasTransforms();
+    }
+
+    function updateCanvasTransforms() {
+        const canvas = state.workspaceCanvas;
+        if (!canvas) return;
+        canvas.style.transform = `translate(${state.zoomOffset.x}px, ${state.zoomOffset.y}px) scale(${state.zoomScale})`;
+    }
+
+    // BRUSH PAINTING
+    function drawBrushStroke(x, y, isStart) {
+        const rect = state.workspaceCanvas.getBoundingClientRect();
+        
+        // Convert screen canvas coordinate to raw image coordinate
+        const scaleX = state.originalImage.naturalWidth / rect.width;
+        const scaleY = state.originalImage.naturalHeight / rect.height;
+        const imgX = x * scaleX;
+        const imgY = y * scaleY;
+
+        const size = state.brushSize;
+        const hardness = state.brushHardness;
+
+        const ctx = state.maskCtx;
+        ctx.save();
+        
+        // Create radial gradient for hardness / soft falloff
+        const grad = ctx.createRadialGradient(imgX, imgY, size * hardness / 2, imgX, imgY, size / 2);
+        if (state.brushMode === 'erase') {
+            grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
+            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.globalCompositeOperation = 'destination-out';
+        } else {
+            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
+            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.globalCompositeOperation = 'source-over';
+        }
+
+        ctx.fillStyle = grad;
+        ctx.beginPath();
+        ctx.arc(imgX, imgY, size / 2, 0, Math.PI * 2);
+        ctx.fill();
+        ctx.restore();
+
+        renderWorkspace();
+    }
+
+    // FLOOD FILL WAND
+    function applyMagicWand(clickX, clickY) {
+        const rect = state.workspaceCanvas.getBoundingClientRect();
+        const scaleX = state.originalImage.naturalWidth / rect.width;
+        const scaleY = state.originalImage.naturalHeight / rect.height;
+        const rawX = Math.round(clickX * scaleX);
+        const rawY = Math.round(clickY * scaleY);
+
+        const w = state.originalImage.naturalWidth;
+        const h = state.originalImage.naturalHeight;
+
+        if (rawX < 0 || rawX >= w || rawY < 0 || rawY >= h) return;
+
+        showInternalLoader('Varinha Mágica', 'Calculando tolerância de cor local...', 20);
+
+        setTimeout(() => {
+            const temp = document.createElement('canvas');
+            temp.width = w;
+            temp.height = h;
+            const tempCtx = temp.getContext('2d');
+            tempCtx.drawImage(state.originalImage, 0, 0);
+            const pixels = tempCtx.getImageData(0, 0, w, h).data;
+
+            const idx = (rawY * w + rawX) * 4;
+            const targetR = pixels[idx];
+            const targetG = pixels[idx+1];
+            const targetB = pixels[idx+2];
+
+            const visited = new Uint8Array(w * h);
+            const queue = [rawX, rawY];
+            let head = 0;
+
+            const maskData = state.maskCtx.getImageData(0, 0, w, h);
+            const maskPixels = maskData.data;
+            const tolSq = state.magicWandTolerance * state.magicWandTolerance;
+
+            while (head < queue.length) {
+                const cx = queue[head++];
+                const cy = queue[head++];
+
+                const offset = cy * w + cx;
+                if (visited[offset]) continue;
+                visited[offset] = 1;
+
+                const mIdx = offset * 4;
+                maskPixels[mIdx] = 0;
+                maskPixels[mIdx+1] = 0;
+                maskPixels[mIdx+2] = 0;
+                maskPixels[mIdx+3] = 0; // Translucency
+
+                const dirs = [0, -1, 0, 1, -1, 0, 1, 0];
+                for (let d = 0; d < 8; d += 2) {
+                    const nx = cx + dirs[d];
+                    const ny = cy + dirs[d+1];
+
+                    if (nx >= 0 && nx < w && ny >= 0 && ny < h) {
+                        const nOffset = ny * w + nx;
+                        if (!visited[nOffset]) {
+                            const nIdx = nOffset * 4;
+                            const dr = pixels[nIdx] - targetR;
+                            const dg = pixels[nIdx+1] - targetG;
+                            const db = pixels[nIdx+2] - targetB;
+                            const distSq = dr*dr + dg*dg + db*db;
+
+                            if (distSq <= tolSq) {
+                                queue.push(nx, ny);
+                            }
+                        }
+                    }
+                }
+            }
+
+            state.maskCtx.putImageData(maskData, 0, 0);
+            hideInternalLoader();
+            renderWorkspace();
+        }, 100);
+    }
+
+    // EXPORT AND CONVERT
+    function downloadPNG() {
+        if (!state.originalImage) return;
+
+        const w = state.originalImage.naturalWidth;
+        const h = state.originalImage.naturalHeight;
+
+        const outCanvas = document.createElement('canvas');
+        outCanvas.width = w;
+        outCanvas.height = h;
+        const outCtx = outCanvas.getContext('2d');
+
+        // Draw opaque background color if color is active
+        if (state.bgColorType === 'color') {
+            outCtx.fillStyle = state.bgColorValue;
+            outCtx.fillRect(0, 0, w, h);
+        }
+
+        // Composite original with alpha mask
+        const temp = document.createElement('canvas');
+        temp.width = w;
+        temp.height = h;
+        const tempCtx = temp.getContext('2d');
+        tempCtx.drawImage(state.originalImage, 0, 0);
+        tempCtx.globalCompositeOperation = 'destination-in';
+        tempCtx.drawImage(state.maskCanvas, 0, 0);
+
+        outCtx.drawImage(temp, 0, 0);
+
+        // Download
+        const link = document.createElement('a');
+        link.download = `fundozero_${Date.now()}.png`;
+        link.href = outCanvas.toDataURL('image/png');
+        link.click();
+    }
+
+    // INTERNAL PROGRESS LOADER
+    function showInternalLoader(title, desc, progress = 0) {
+        document.getElementById('loader-title').innerText = title;
+        document.getElementById('loader-desc').innerText = desc;
+        updateLoaderProgress(progress);
+        document.getElementById('internal-loader').className = "absolute inset-0 bg-slate-950/85 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-3xl";
+    }
+
+    function updateLoaderProgress(pct, newDesc = null) {
+        document.getElementById('loader-progress').style.width = `${pct}%`;
+        if (newDesc) {
+            document.getElementById('loader-desc').innerText = newDesc;
+        }
+    }
+
+    function hideInternalLoader() {
+        document.getElementById('internal-loader').className = "hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex flex-col items-center justify-center z-20 rounded-3xl";
+    }
+
+})();

@@ -46,10 +46,26 @@
     <!-- External Tool Libraries via CDN -->
     <!-- MediaPipe Selfie Segmentation (Background Remover) -->
     <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
-    <!-- QRious (QR Code Generator) -->
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrious/4.0.2/qrious.min.js"></script>
-    <!-- Html5Qrcode (QR Code Scanner) -->
-    <script src="https://unpkg.com/html5-qrcode" crossorigin="anonymous"></script>
+    <!-- Tesseract.js (Local OCR) -->
+    <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+    <!-- Dynamic Loader for IMG.LY Background Removal -->
+    <script type="module">
+        async function loadImglyEngine() {
+            try {
+                const imglyModule = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+                const removeFn = imglyModule.removeBackground || imglyModule.default || imglyModule.imglyRemoveBackground;
+                if (removeFn) {
+                    window.imglyRemoveBackground = removeFn;
+                    window.imglyLoaded = true;
+                    console.log("OmniTool Studio: Motor de IA Geral (IMG.LY) inicializado com sucesso.");
+                    document.dispatchEvent(new CustomEvent('imgly-ready'));
+                }
+            } catch (err) {
+                console.error("OmniTool Studio: Falha de conexão ao carregar biblioteca IMG.LY:", err);
+            }
+        }
+        loadImglyEngine();
+    </script>
 
     <!-- Estilos Customizados -->
     <link rel="stylesheet" href="css/styles.css">
@@ -113,19 +129,24 @@
                     <span>Remover Fundo IA</span>
                 </button>
 
-                <button onclick="switchTool('image-compressor')" id="nav-image-compressor" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
-                    <i class="fa-solid fa-compress text-sm min-w-[18px]"></i>
-                    <span>Compressor Imagem</span>
+                <button onclick="switchTool('bg-generator')" id="nav-bg-generator" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-image text-sm min-w-[18px]"></i>
+                    <span>Gerador de Fundos IA</span>
                 </button>
 
-                <button onclick="switchTool('qr-suite')" id="nav-qr-suite" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
-                    <i class="fa-solid fa-qrcode text-sm min-w-[18px]"></i>
-                    <span>QR Code Suite</span>
+                <button onclick="switchTool('grab-text')" id="nav-grab-text" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-file-lines text-sm min-w-[18px]"></i>
+                    <span>Extrair Texto OCR</span>
                 </button>
 
-                <button onclick="switchTool('color-palette')" id="nav-color-palette" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
-                    <i class="fa-solid fa-palette text-sm min-w-[18px]"></i>
-                    <span>Paleta de Cores</span>
+                <button onclick="switchTool('magic-grab')" id="nav-magic-grab" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-arrows-up-down-left-right text-sm min-w-[18px]"></i>
+                    <span>Mover Sujeito</span>
+                </button>
+
+                <button onclick="switchTool('magic-eraser')" id="nav-magic-eraser" class="nav-btn flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition text-slate-400 hover:text-slate-200 hover:bg-slate-900/50">
+                    <i class="fa-solid fa-eraser text-sm min-w-[18px]"></i>
+                    <span>Apagar Objetos</span>
                 </button>
             </div>
 
