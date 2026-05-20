@@ -314,6 +314,13 @@
                 // Setup layout dims
                 state.workspaceCanvas.width = img.naturalWidth;
                 state.workspaceCanvas.height = img.naturalHeight;
+                
+                // Override CSS sizes to prevent browser double-scaling!
+                state.workspaceCanvas.style.width = `${img.naturalWidth}px`;
+                state.workspaceCanvas.style.height = `${img.naturalHeight}px`;
+                state.workspaceCanvas.style.maxWidth = 'none';
+                state.workspaceCanvas.style.maxHeight = 'none';
+                state.workspaceCanvas.style.transformOrigin = '0 0';
                 state.workspaceCanvas.classList.remove('hidden');
 
                 document.getElementById('upload-placeholder').classList.add('hidden');
@@ -349,7 +356,11 @@
         const imgH = state.originalImage.naturalHeight;
 
         state.zoomScale = Math.min(contW / imgW, contH / imgH, 1.0);
-        state.zoomOffset = { x: 0, y: 0 };
+        state.zoomOffset = {
+            x: (contW + 32 - imgW * state.zoomScale) / 2,
+            y: (contH + 32 - imgH * state.zoomScale) / 2
+        };
+        updateCanvasTransforms();
     }
 
     function setToolMode(mode) {
@@ -364,8 +375,12 @@
 
         if (mode === 'wand') {
             document.getElementById('tool-settings-wand').classList.remove('hidden');
+            state.workspaceCanvas.style.cursor = 'crosshair';
         } else if (mode === 'brush') {
             document.getElementById('tool-settings-brush').classList.remove('hidden');
+            state.workspaceCanvas.style.cursor = 'crosshair';
+        } else {
+            state.workspaceCanvas.style.cursor = 'grab';
         }
     }
 
@@ -649,6 +664,7 @@
         if (state.activeAction === 'pan') {
             state.isPanning = true;
             state.lastMousePos = { x: e.clientX, y: e.clientY };
+            state.workspaceCanvas.style.cursor = 'grabbing';
         } else if (state.activeAction === 'wand') {
             applyMagicWand(mouseX, mouseY);
         } else if (state.activeAction === 'brush') {
@@ -684,6 +700,10 @@
     function canvasMouseUp() {
         state.isPanning = false;
         state.isDrawing = false;
+        state.lastImgPos = null;
+        if (state.activeAction === 'pan') {
+            state.workspaceCanvas.style.cursor = 'grab';
+        }
     }
 
     function canvasWheel(e) {
@@ -716,30 +736,36 @@
         const imgX = x * scaleX;
         const imgY = y * scaleY;
 
-        const size = state.brushSize;
-        const hardness = state.brushHardness;
-
         const ctx = state.maskCtx;
         ctx.save();
         
-        // Create radial gradient for hardness / soft falloff
-        const grad = ctx.createRadialGradient(imgX, imgY, size * hardness / 2, imgX, imgY, size / 2);
+        ctx.lineWidth = state.brushSize;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
+
         if (state.brushMode === 'erase') {
-            grad.addColorStop(0, 'rgba(0, 0, 0, 1)');
-            grad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            ctx.strokeStyle = 'rgba(0, 0, 0, 1)';
+            ctx.fillStyle = 'rgba(0, 0, 0, 1)';
             ctx.globalCompositeOperation = 'destination-out';
         } else {
-            grad.addColorStop(0, 'rgba(255, 255, 255, 1)');
-            grad.addColorStop(1, 'rgba(255, 255, 255, 0)');
+            ctx.strokeStyle = 'rgba(255, 255, 255, 1)';
+            ctx.fillStyle = 'rgba(255, 255, 255, 1)';
             ctx.globalCompositeOperation = 'source-over';
         }
 
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(imgX, imgY, size / 2, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.restore();
+        if (isStart) {
+            ctx.beginPath();
+            ctx.arc(imgX, imgY, state.brushSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (state.lastImgPos) {
+            ctx.beginPath();
+            ctx.moveTo(state.lastImgPos.x, state.lastImgPos.y);
+            ctx.lineTo(imgX, imgY);
+            ctx.stroke();
+        }
 
+        ctx.restore();
+        state.lastImgPos = { x: imgX, y: imgY };
         renderWorkspace();
     }
 

@@ -20,6 +20,7 @@
         isDrawing: false,
         isPanning: false,
         lastMousePos: { x: 0, y: 0 },
+        lastImgPos: null,
         activeAction: 'brush' // 'brush', 'pan'
     };
 
@@ -68,7 +69,7 @@
                         </div>
 
                         <!-- WORK CANVAS -->
-                        <canvas id="canvas-magic-eraser" class="hidden max-w-full max-h-full cursor-crosshair rounded-xl z-0"></canvas>
+                        <canvas id="canvas-magic-eraser" class="hidden cursor-crosshair rounded-xl z-0"></canvas>
 
                         <!-- COMPOSITION LOADER -->
                         <div id="eraser-loader" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex-col items-center justify-center z-20 rounded-3xl">
@@ -84,7 +85,7 @@
                         <div class="space-y-3">
                             <span class="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">1. Modo de Controle</span>
                             <div class="grid grid-cols-2 gap-2 bg-slate-950/60 p-1 rounded-xl border border-slate-900">
-                                <button id="btn-eraser-tool-brush" class="active py-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-indigo-300 border border-indigo-500/20 bg-indigo-950/20" disabled>
+                                <button id="btn-eraser-tool-brush" class="active py-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white" disabled>
                                     <i class="fa-solid fa-paintbrush mr-1"></i> Pincelar
                                 </button>
                                 <button id="btn-eraser-tool-pan" class="py-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200" disabled>
@@ -104,12 +105,12 @@
                                     <span>Espessura:</span>
                                     <span id="eraser-brush-size-val" class="font-bold text-accent-400">35px</span>
                                 </div>
-                                <input type="range" id="eraser-brush-size" min="5" max="100" value="35" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer" disabled>
+                                <input type="range" id="eraser-brush-size" min="5" max="150" value="35" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer" disabled>
                             </div>
 
                             <div class="space-y-1">
                                 <div class="flex items-center justify-between text-[10px] text-slate-300">
-                                    <span>Suavidade das Bordas:</span>
+                                    <span>Suavidade:</span>
                                     <span id="eraser-brush-hardness-val" class="font-bold text-accent-400">80%</span>
                                 </div>
                                 <input type="range" id="eraser-brush-hardness" min="10" max="100" value="80" class="w-full accent-accent-500 bg-slate-900 h-1 rounded-lg cursor-pointer" disabled>
@@ -190,6 +191,13 @@
 
                 state.workspaceCanvas.width = img.naturalWidth;
                 state.workspaceCanvas.height = img.naturalHeight;
+                
+                // Override CSS sizes to prevent browser double-scaling!
+                state.workspaceCanvas.style.width = `${img.naturalWidth}px`;
+                state.workspaceCanvas.style.height = `${img.naturalHeight}px`;
+                state.workspaceCanvas.style.maxWidth = 'none';
+                state.workspaceCanvas.style.maxHeight = 'none';
+                state.workspaceCanvas.style.transformOrigin = '0 0';
                 state.workspaceCanvas.classList.remove('hidden');
 
                 document.getElementById('eraser-placeholder').classList.add('hidden');
@@ -221,7 +229,10 @@
         const imgH = state.originalImage.naturalHeight;
 
         state.zoomScale = Math.min(contW / imgW, contH / imgH, 1.0);
-        state.zoomOffset = { x: 0, y: 0 };
+        state.zoomOffset = {
+            x: (contW + 32 - imgW * state.zoomScale) / 2,
+            y: (contH + 32 - imgH * state.zoomScale) / 2
+        };
         updateCanvasTransforms();
     }
 
@@ -231,13 +242,13 @@
         const btnPan = document.getElementById('btn-eraser-tool-pan');
 
         if (mode === 'brush') {
-            btnBrush.className = "active py-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-indigo-300 border border-indigo-500/20 bg-indigo-950/20";
+            btnBrush.className = "active py-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white";
             btnPan.className = "py-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200";
-            state.workspaceCanvas.className = "max-w-full max-h-full cursor-crosshair rounded-xl z-0";
+            state.workspaceCanvas.style.cursor = 'crosshair';
         } else {
-            btnPan.className = "active py-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-indigo-300 border border-indigo-500/20 bg-indigo-950/20";
+            btnPan.className = "active py-2 rounded-lg text-xs font-bold text-center transition-all bg-accent-600 text-white";
             btnBrush.className = "py-2 rounded-lg text-xs font-bold text-center transition-all text-slate-400 hover:text-slate-200";
-            state.workspaceCanvas.className = "max-w-full max-h-full cursor-grab rounded-xl z-0";
+            state.workspaceCanvas.style.cursor = 'grab';
         }
     }
 
@@ -272,8 +283,7 @@
         if (state.activeAction === 'pan') {
             state.isPanning = true;
             state.lastMousePos = { x: e.clientX, y: e.clientY };
-            state.workspaceCanvas.classList.remove('cursor-grab');
-            state.workspaceCanvas.classList.add('cursor-grabbing');
+            state.workspaceCanvas.style.cursor = 'grabbing';
         } else {
             state.isDrawing = true;
             paintMaskStroke(mouseX, mouseY, true);
@@ -302,9 +312,9 @@
     function canvasMouseUp() {
         state.isPanning = false;
         state.isDrawing = false;
+        state.lastImgPos = null;
         if (state.activeAction === 'pan') {
-            state.workspaceCanvas.classList.remove('cursor-grabbing');
-            state.workspaceCanvas.classList.add('cursor-grab');
+            state.workspaceCanvas.style.cursor = 'grab';
         }
     }
 
@@ -326,7 +336,7 @@
         canvas.style.transform = `translate(${state.zoomOffset.x}px, ${state.zoomOffset.y}px) scale(${state.zoomScale})`;
     }
 
-    // DRAW RED MASK ON MASK CANVAS
+    // DRAW RED MASK ON MASK CANVAS (SMOOTH AND GAPLESS)
     function paintMaskStroke(x, y, isStart) {
         const rect = state.workspaceCanvas.getBoundingClientRect();
         const scaleX = state.originalImage.naturalWidth / rect.width;
@@ -338,16 +348,25 @@
         const ctx = state.maskCtx;
         ctx.save();
         
-        const grad = ctx.createRadialGradient(imgX, imgY, state.brushSize * state.brushHardness / 2, imgX, imgY, state.brushSize / 2);
-        grad.addColorStop(0, 'rgba(239, 68, 68, 1)'); // Solid red
-        grad.addColorStop(1, 'rgba(239, 68, 68, 0)'); // Transparent red
+        ctx.strokeStyle = 'rgba(239, 68, 68, 1)';
+        ctx.fillStyle = 'rgba(239, 68, 68, 1)';
+        ctx.lineWidth = state.brushSize;
+        ctx.lineCap = 'round';
+        ctx.lineJoin = 'round';
 
-        ctx.fillStyle = grad;
-        ctx.beginPath();
-        ctx.arc(imgX, imgY, state.brushSize / 2, 0, Math.PI * 2);
-        ctx.fill();
+        if (isStart) {
+            ctx.beginPath();
+            ctx.arc(imgX, imgY, state.brushSize / 2, 0, Math.PI * 2);
+            ctx.fill();
+        } else if (state.lastImgPos) {
+            ctx.beginPath();
+            ctx.moveTo(state.lastImgPos.x, state.lastImgPos.y);
+            ctx.lineTo(imgX, imgY);
+            ctx.stroke();
+        }
+
         ctx.restore();
-
+        state.lastImgPos = { x: imgX, y: imgY };
         renderWorkspace();
     }
 
@@ -386,8 +405,8 @@
             for (let y = 1; y < h - 1; y++) {
                 for (let x = 1; x < w - 1; x++) {
                     const idx = (y * w + x) * 4;
-                    // Red color indicates mask
-                    if (mPixels[idx] > 200 && mPixels[idx+3] > 50) {
+                    // Red color or alpha indicates mask
+                    if (mPixels[idx+3] > 10) {
                         maskCoords.push({ x, y });
                         
                         // Border check
@@ -421,7 +440,7 @@
                 let minDist = Infinity;
 
                 // Search radius for texture source
-                const radius = 40;
+                const radius = 45;
                 const startX = Math.max(1, px - radius);
                 const endX = Math.min(w - 2, px + radius);
                 const startY = Math.max(1, py - radius);
@@ -430,7 +449,7 @@
                 for (let sy = startY; sy <= endY; sy += 3) {
                     for (let sx = startX; sx <= endX; sx += 3) {
                         const sIdx = (sy * w + sx) * 4;
-                        const isMasked = mPixels[sIdx] > 200 && mPixels[sIdx+3] > 50;
+                        const isMasked = mPixels[sIdx+3] > 10;
 
                         if (!isMasked) {
                             const dist = (sx - px)*(sx - px) + (sy - py)*(sy - py);

@@ -8,7 +8,7 @@
         
         // Layers
         backgroundCanvas: null, // Magic Filled Background
-        foregroundImage: null, // Isolated Subject transparent
+        foregroundImage: null, // Isolated Subject transparent cropped canvas
         
         // Subject Interaction State
         subjectScale: 1.0,
@@ -17,10 +17,8 @@
         subjectRect: { w: 0, h: 0 },
         
         isInteracting: false,
-        interactionMode: 'none', // 'drag', 'scale', 'rotate'
+        interactionMode: 'none', // 'drag'
         lastMousePos: { x: 0, y: 0 },
-        initialDistance: 0,
-        initialAngle: 0,
         
         // Background Options
         bgFillMode: 'inpainted', // 'inpainted' (magic fill), 'original' (sticker duplicate), 'transparent'
@@ -68,7 +66,7 @@
                         </div>
 
                         <!-- WORK CANVAS -->
-                        <canvas id="canvas-magic-grab" class="hidden max-w-full max-h-full cursor-grab rounded-xl z-0"></canvas>
+                        <canvas id="canvas-magic-grab" class="hidden cursor-grab rounded-xl z-0"></canvas>
 
                         <!-- COMPOSITION LOADER -->
                         <div id="grab-loader" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex-col items-center justify-center z-20 rounded-3xl">
@@ -219,6 +217,20 @@
 
                 state.workspaceCanvas.width = img.naturalWidth;
                 state.workspaceCanvas.height = img.naturalHeight;
+                
+                // Set CSS style to prevent double-scaling layout
+                state.workspaceCanvas.style.width = `${img.naturalWidth}px`;
+                state.workspaceCanvas.style.height = `${img.naturalHeight}px`;
+                state.workspaceCanvas.style.maxWidth = 'none';
+                state.workspaceCanvas.style.maxHeight = 'none';
+                state.workspaceCanvas.style.transformOrigin = '0 0';
+                
+                // Centering inside workspace
+                const container = document.getElementById('grab-workspace-container');
+                const scale = Math.min((container.clientWidth - 32) / img.naturalWidth, (container.clientHeight - 32) / img.naturalHeight, 1.0);
+                const ox = (container.clientWidth - img.naturalWidth * scale) / 2;
+                const oy = (container.clientHeight - img.naturalHeight * scale) / 2;
+                state.workspaceCanvas.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
                 state.workspaceCanvas.classList.remove('hidden');
 
                 document.getElementById('grab-placeholder').classList.add('hidden');
@@ -249,13 +261,10 @@
 
         // 1. Draw Background Layer
         if (state.foregroundImage && state.bgFillMode === 'transparent') {
-            // Draw transparent checkers
             drawCheckerboard(ctx, w, h);
         } else if (state.foregroundImage && state.bgFillMode === 'inpainted' && state.backgroundCanvas) {
-            // Draw magic inpainted background
             ctx.drawImage(state.backgroundCanvas, 0, 0);
         } else {
-            // Draw original background
             ctx.drawImage(state.originalImage, 0, 0);
         }
 
@@ -273,8 +282,8 @@
             ctx.drawImage(img, -subW / 2, -subH / 2, subW, subH);
 
             // Draw a subtle border indicator around the subject to guide the user
-            ctx.strokeStyle = 'rgba(124, 58, 237, 0.4)';
-            ctx.lineWidth = 2;
+            ctx.strokeStyle = 'rgba(124, 58, 237, 0.6)';
+            ctx.lineWidth = Math.max(2, 2 / (parseFloat(state.workspaceCanvas.style.transform.match(/scale\((.*?)\)/)?.[1] || 1)));
             ctx.strokeRect(-subW / 2 - 2, -subH / 2 - 2, subW + 4, subH + 4);
             ctx.restore();
         }
@@ -292,7 +301,6 @@
         }
     }
 
-    // RUN AI
     function runGrabAI() {
         const engine = document.querySelector('input[name="grab-engine"]:checked').value;
         if (engine === 'mediapipe') {
@@ -314,14 +322,12 @@
                 const w = state.originalImage.naturalWidth;
                 const h = state.originalImage.naturalHeight;
 
-                // Create mask canvas
                 const mask = document.createElement('canvas');
                 mask.width = w;
                 mask.height = h;
                 const mCtx = mask.getContext('2d');
                 mCtx.drawImage(results.segmentationMask, 0, 0);
 
-                // Binarize
                 const imgData = mCtx.getImageData(0, 0, w, h);
                 const data = imgData.data;
                 for (let i = 0; i < data.length; i += 4) {
@@ -385,7 +391,6 @@
                 const mCtx = mask.getContext('2d');
                 mCtx.drawImage(resImg, 0, 0);
 
-                // Create white mask with transparent background
                 const imgData = mCtx.getImageData(0, 0, w, h);
                 const data = imgData.data;
                 for (let i = 0; i < data.length; i += 4) {
@@ -407,26 +412,77 @@
         }
     }
 
+    // HELPER: CROP SUBJECT TO BOUNDING BOX
+    function getCroppedSubject(img, maskCanvas) {
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        
+        const mCtx = maskCanvas.getContext('2d');
+        const mData = mCtx.getImageData(0, 0, w, h).data;
+        
+        let minX = w, maxX = 0, minY = h, maxY = 0;
+        let found = false;
+        
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const idx = (y * w + x) * 4;
+                if (mData[idx+3] > 10) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    found = true;
+                }
+            }
+        }
+        
+        if (!found) {
+            return {
+                canvas: img,
+                rect: { x: 0, y: 0, w: w, h: h }
+            };
+        }
+        
+        minX = Math.max(0, minX - 3);
+        minY = Math.max(0, minY - 3);
+        maxX = Math.min(w - 1, maxX + 3);
+        maxY = Math.min(h - 1, maxY + 3);
+        
+        const cropW = maxX - minX + 1;
+        const cropH = maxY - minY + 1;
+        
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = cropW;
+        cropCanvas.height = cropH;
+        const cropCtx = cropCanvas.getContext('2d');
+        
+        cropCtx.drawImage(img, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+        cropCtx.globalCompositeOperation = 'destination-in';
+        cropCtx.drawImage(maskCanvas, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+        cropCtx.globalCompositeOperation = 'source-over';
+        
+        return {
+            canvas: cropCanvas,
+            rect: { x: minX, y: minY, w: cropW, h: cropH }
+        };
+    }
+
     function applyIsolateSubject(maskCanvas) {
         const w = state.originalImage.naturalWidth;
         const h = state.originalImage.naturalHeight;
 
-        // 1. Create transparent Foreground Subject image
-        const foreCanvas = document.createElement('canvas');
-        foreCanvas.width = w;
-        foreCanvas.height = h;
-        const fCtx = foreCanvas.getContext('2d');
-        fCtx.drawImage(state.originalImage, 0, 0);
-        fCtx.globalCompositeOperation = 'destination-in';
-        fCtx.drawImage(maskCanvas, 0, 0);
-
-        state.foregroundImage = foreCanvas;
-
-        // Subject default coordinates
+        // Isolate and Crop subject
+        const cropped = getCroppedSubject(state.originalImage, maskCanvas);
+        state.foregroundImage = cropped.canvas;
+        state.subjectRect = { w: cropped.rect.w, h: cropped.rect.h };
+        
+        // Subject starting position (centered on its original location)
+        state.subjectPosition = {
+            x: cropped.rect.x + cropped.rect.w / 2,
+            y: cropped.rect.y + cropped.rect.h / 2
+        };
         state.subjectScale = 1.0;
         state.subjectRotation = 0;
-        state.subjectPosition = { x: w / 2, y: h / 2 };
-        state.subjectRect = { w: w, h: h };
 
         // 2. Create Magic Filled Background Layer (Inpaint)
         showLoader('Preenchimento Mágico', 'Reconstruindo o fundo atrás do sujeito (Inpainting)...', 60);
@@ -468,10 +524,8 @@
         const mCtx = mask.getContext('2d');
         const mPixels = mCtx.getImageData(0, 0, w, h).data;
 
-        // Simple and fast Content-Aware Patch Matching
-        // Scan the mask to find coordinates that need filling
         const maskCoords = [];
-        const borderCoords = []; // Border of the mask
+        const borderCoords = []; 
 
         for (let y = 1; y < h - 1; y++) {
             for (let x = 1; x < w - 1; x++) {
@@ -479,7 +533,6 @@
                 if (mPixels[idx+3] > 128) {
                     maskCoords.push({ x, y });
                     
-                    // Check if neighbor is unmasked (this is border)
                     const n1 = (y * w + (x-1)) * 4;
                     const n2 = (y * w + (x+1)) * 4;
                     const n3 = ((y-1) * w + x) * 4;
@@ -494,30 +547,27 @@
 
         if (maskCoords.length === 0) return;
 
-        // Perform patch fill from borders inward
-        const step = Math.max(1, Math.floor(maskCoords.length / 5000)); // Sample step if image is huge
+        const step = Math.max(1, Math.floor(maskCoords.length / 5000)); 
         
         for (let i = 0; i < maskCoords.length; i += step) {
             const coord = maskCoords[i];
             const px = coord.x;
             const py = coord.y;
 
-            // Search for closest matching 4x4 patch in unmasked area (radius 40px)
             let bestX = px;
             let bestY = py;
             let minDist = Infinity;
 
-            const radius = 35;
+            const radius = 45;
             const startX = Math.max(1, px - radius);
             const endX = Math.min(w - 2, px + radius);
             const startY = Math.max(1, py - radius);
             const endY = Math.min(h - 2, py + radius);
 
-            // Let's sample pixels and find the nearest unmasked pixels
             for (let sy = startY; sy <= endY; sy += 3) {
                 for (let sx = startX; sx <= endX; sx += 3) {
                     const sIdx = (sy * w + sx) * 4;
-                    if (mPixels[sIdx+3] === 0) { // Unmasked pixel found
+                    if (mPixels[sIdx+3] === 0) { 
                         const dist = (sx - px)*(sx - px) + (sy - py)*(sy - py);
                         if (dist < minDist) {
                             minDist = dist;
@@ -528,23 +578,20 @@
                 }
             }
 
-            // Copy color from best pixel found
             const targetIdx = (py * w + px) * 4;
             const sourceIdx = (bestY * w + bestX) * 4;
 
             pixels[targetIdx] = pixels[sourceIdx];
             pixels[targetIdx+1] = pixels[sourceIdx+1];
             pixels[targetIdx+2] = pixels[sourceIdx+2];
-            pixels[targetIdx+3] = 255; // Opaque
+            pixels[targetIdx+3] = 255; 
         }
 
         ctx.putImageData(imgData, 0, 0);
 
-        // Feather/Blur mask edges slightly on filled background for smooth blend
         ctx.globalCompositeOperation = 'source-over';
         ctx.filter = 'blur(6px)';
         
-        // Draw slightly transparent original border pixels over border areas to blend textures
         borderCoords.forEach(c => {
             const idx = (c.y * w + c.x) * 4;
             ctx.fillStyle = `rgb(${pixels[idx]}, ${pixels[idx+1]}, ${pixels[idx+2]})`;
@@ -565,7 +612,7 @@
         const mouseX = (e.clientX - rect.left) * scaleX;
         const mouseY = (e.clientY - rect.top) * scaleY;
 
-        // Verify click on subject boundaries
+        // Verify click on cropped subject boundaries
         const subW = state.subjectRect.w * state.subjectScale;
         const subH = state.subjectRect.h * state.subjectScale;
         
@@ -578,8 +625,7 @@
             state.isInteracting = true;
             state.interactionMode = 'drag';
             state.lastMousePos = { x: e.clientX, y: e.clientY };
-            state.workspaceCanvas.classList.remove('cursor-grab');
-            state.workspaceCanvas.classList.add('cursor-grabbing');
+            state.workspaceCanvas.style.cursor = 'grabbing';
         }
     }
 
@@ -606,8 +652,7 @@
         if (state.isInteracting) {
             state.isInteracting = false;
             state.interactionMode = 'none';
-            state.workspaceCanvas.classList.remove('cursor-grabbing');
-            state.workspaceCanvas.classList.add('cursor-grab');
+            state.workspaceCanvas.style.cursor = 'grab';
         }
     }
 
@@ -621,23 +666,69 @@
         } else {
             state.subjectScale /= scaleFactor;
         }
-        state.subjectScale = Math.max(0.1, Math.min(4.0, state.subjectScale));
+        state.subjectScale = Math.max(0.1, Math.min(5.0, state.subjectScale));
         renderWorkspace();
     }
 
     function resetSubjectPos() {
-        if (!state.originalImage) return;
+        if (!state.originalImage || !state.foregroundImage) return;
+        
+        const w = state.originalImage.naturalWidth;
+        const h = state.originalImage.naturalHeight;
+        
         state.subjectScale = 1.0;
         state.subjectRotation = 0;
-        state.subjectPosition = { x: state.originalImage.naturalWidth / 2, y: state.originalImage.naturalHeight / 2 };
+        
+        // Return to original crop position
+        const container = document.getElementById('grab-workspace-container');
+        const scale = Math.min((container.clientWidth - 32) / w, (container.clientHeight - 32) / h, 1.0);
+        const ox = (container.clientWidth - w * scale) / 2;
+        const oy = (container.clientHeight - h * scale) / 2;
+        state.workspaceCanvas.style.transform = `translate(${ox}px, ${oy}px) scale(${scale})`;
+        
+        // Re-read crop metrics to restore position
+        state.subjectPosition = {
+            x: w / 2,
+            y: h / 2
+        };
+        
         renderWorkspace();
     }
 
     function downloadGrabImage() {
         if (!state.workspaceCanvas) return;
+        
+        // Export composition at full size without the 紫色 border indicator
+        const canvas = document.createElement('canvas');
+        canvas.width = state.workspaceCanvas.width;
+        canvas.height = state.workspaceCanvas.height;
+        const ctx = canvas.getContext('2d');
+        
+        // Draw background
+        if (state.foregroundImage && state.bgFillMode === 'transparent') {
+            // Keep transparent
+        } else if (state.foregroundImage && state.bgFillMode === 'inpainted' && state.backgroundCanvas) {
+            ctx.drawImage(state.backgroundCanvas, 0, 0);
+        } else {
+            ctx.drawImage(state.originalImage, 0, 0);
+        }
+
+        // Draw subject
+        if (state.foregroundImage) {
+            const img = state.foregroundImage;
+            const subW = state.subjectRect.w * state.subjectScale;
+            const subH = state.subjectRect.h * state.subjectScale;
+
+            ctx.save();
+            ctx.translate(state.subjectPosition.x, state.subjectPosition.y);
+            ctx.rotate(state.subjectRotation * Math.PI / 180);
+            ctx.drawImage(img, -subW / 2, -subH / 2, subW, subH);
+            ctx.restore();
+        }
+        
         const link = document.createElement('a');
         link.download = `magicgrab_${Date.now()}.png`;
-        link.href = state.workspaceCanvas.toDataURL('image/png');
+        link.href = canvas.toDataURL('image/png');
         link.click();
     }
 

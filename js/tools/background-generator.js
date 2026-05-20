@@ -1,7 +1,7 @@
 // OmniTool Studio: Background Generator Tool Module
 (function() {
     let state = {
-        foregroundImage: null,
+        foregroundImage: null, // Cropped foreground canvas
         backgroundImage: null,
         workspaceCanvas: null,
         workspaceCtx: null,
@@ -51,7 +51,7 @@
                         </div>
 
                         <!-- WORK CANVAS -->
-                        <canvas id="canvas-bg-generator" class="hidden max-w-full max-h-full cursor-grab rounded-xl z-0"></canvas>
+                        <canvas id="canvas-bg-generator" class="hidden cursor-grab rounded-xl z-0"></canvas>
 
                         <!-- COMPOSITION LOADER -->
                         <div id="gen-loader" class="hidden absolute inset-0 bg-slate-950/80 backdrop-blur-sm flex-col items-center justify-center z-20 rounded-3xl">
@@ -85,7 +85,7 @@
                             <textarea id="ai-prompt" rows="3" placeholder="Ex: Uma mesa de mármore branco com iluminação suave de estúdio, fundo desfocado com folhas de palmeira..." class="w-full px-3 py-2 text-xs rounded-xl border border-slate-800 bg-slate-950 text-white focus:outline-none focus:border-accent-500 transition leading-normal"></textarea>
                             
                             <div class="flex gap-2">
-                                <button id="btn-enhance-prompt" class="flex-1 py-2 rounded-xl border border-slate-800 bg-slate-900/30 hover:border-slate-700 text-[10px] font-bold text-amber-400 transition flex items-center justify-center gap-1.5">
+                                <button id="btn-enhance-prompt" class="flex-1 py-2 rounded-xl border border-slate-800 bg-slate-900/30 hover:bg-slate-700 text-[10px] font-bold text-amber-400 transition flex items-center justify-center gap-1.5">
                                     <i class="fa-solid fa-wand-magic-sparkles"></i> Aprimorar Prompt
                                 </button>
                                 <button id="btn-generate-bg" class="flex-[1.5] py-2 rounded-xl bg-accent-600 hover:bg-accent-500 text-xs font-bold text-white transition flex items-center justify-center gap-1.5 shadow-lg shadow-accent-500/10" disabled>
@@ -154,12 +154,10 @@
         reader.onload = function(event) {
             const img = new Image();
             img.onload = function() {
-                // If image has transparent pixels, load directly. Otherwise offer local AI removal
                 if (hasAlphaChannel(img)) {
                     loadForeground(img);
                 } else {
                     showLoader('Isolando Objeto...', 'Detectando contorno e removendo fundo automaticamente.');
-                    // Attempt fast local removal
                     tryFastLocalRemoval(file, img);
                 }
             };
@@ -169,7 +167,6 @@
     }
 
     function hasAlphaChannel(img) {
-        // Quick canvas scan for transparent pixels
         const canvas = document.createElement('canvas');
         canvas.width = Math.min(img.naturalWidth, 100);
         canvas.height = Math.min(img.naturalHeight, 100);
@@ -177,13 +174,12 @@
         ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
         const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
         for (let i = 3; i < data.length; i += 4) {
-            if (data[i] < 255) return true;
+            if (data[i] < 250) return true;
         }
         return false;
     }
 
     function tryFastLocalRemoval(file, img) {
-        // Use IMG.LY if loaded, otherwise fallback to MediaPipe or load directly
         if (window.imglyRemoveBackground) {
             window.imglyRemoveBackground(file, {
                 model: 'isnet_quint8',
@@ -197,19 +193,59 @@
                 };
                 transparentImg.src = url;
             }).catch(() => {
-                // Load original as fallback if fails
                 loadForeground(img);
                 if (typeof showNotification === 'function') showNotification("Não removeu fundo automaticamente. Carregado original.");
             });
         } else {
-            // Load original directly as fallback
             loadForeground(img);
             if (typeof showNotification === 'function') showNotification("Carregado original. Recomendamos enviar fotos com transparência.");
         }
     }
 
+    // HELPER: CROP TRANSPARENT PNG TO BOUNDING BOX
+    function cropTransparentImage(img) {
+        const canvas = document.createElement('canvas');
+        const w = img.naturalWidth;
+        const h = img.naturalHeight;
+        canvas.width = w;
+        canvas.height = h;
+        const ctx = canvas.getContext('2d');
+        ctx.drawImage(img, 0, 0);
+        
+        const data = ctx.getImageData(0, 0, w, h).data;
+        let minX = w, maxX = 0, minY = h, maxY = 0;
+        let found = false;
+        
+        for (let y = 0; y < h; y++) {
+            for (let x = 0; x < w; x++) {
+                const idx = (y * w + x) * 4;
+                if (data[idx+3] > 5) {
+                    if (x < minX) minX = x;
+                    if (x > maxX) maxX = x;
+                    if (y < minY) minY = y;
+                    if (y > maxY) maxY = y;
+                    found = true;
+                }
+            }
+        }
+        
+        if (!found) return img;
+        
+        const cropW = maxX - minX + 1;
+        const cropH = maxY - minY + 1;
+        
+        const cropCanvas = document.createElement('canvas');
+        cropCanvas.width = cropW;
+        cropCanvas.height = cropH;
+        cropCanvas.getContext('2d').drawImage(img, minX, minY, cropW, cropH, 0, 0, cropW, cropH);
+        
+        return cropCanvas;
+    }
+
     function loadForeground(img) {
-        state.foregroundImage = img;
+        // Crop transparent padding out
+        const croppedCanvas = cropTransparentImage(img);
+        state.foregroundImage = croppedCanvas;
 
         // Show thumb preview
         const thumb = document.getElementById('obj-thumb');
@@ -218,31 +254,46 @@
         thumbCanvas.width = 48;
         thumbCanvas.height = 48;
         const thumbCtx = thumbCanvas.getContext('2d');
-        // Draw centered and resized
-        const scale = Math.min(48 / img.naturalWidth, 48 / img.naturalHeight);
-        const w = img.naturalWidth * scale;
-        const h = img.naturalHeight * scale;
-        thumbCtx.drawImage(img, (48 - w) / 2, (48 - h) / 2, w, h);
+        const scale = Math.min(48 / croppedCanvas.width, 48 / croppedCanvas.height);
+        const w = croppedCanvas.width * scale;
+        const h = croppedCanvas.height * scale;
+        thumbCtx.drawImage(croppedCanvas, (48 - w) / 2, (48 - h) / 2, w, h);
         thumb.appendChild(thumbCanvas);
 
         // Canvas setups
         state.workspaceCanvas = document.getElementById('canvas-bg-generator');
         state.workspaceCtx = state.workspaceCanvas.getContext('2d');
 
-        // Set dimensions (Default square composition 800x800)
-        state.workspaceCanvas.width = 800;
-        state.workspaceCanvas.height = 800;
+        // Set dimensions (Default high resolution composition 1000x1000)
+        state.workspaceCanvas.width = 1000;
+        state.workspaceCanvas.height = 1000;
+        
+        // CSS Overrides to keep scale logic perfect
+        state.workspaceCanvas.style.width = '1000px';
+        state.workspaceCanvas.style.height = '1000px';
+        state.workspaceCanvas.style.maxWidth = 'none';
+        state.workspaceCanvas.style.maxHeight = 'none';
+        state.workspaceCanvas.style.transformOrigin = '0 0';
+
+        // Fit workspace canvas in viewport
+        const container = document.getElementById('gen-workspace-container');
+        const viewScale = Math.min((container.clientWidth - 32) / 1000, (container.clientHeight - 32) / 1000, 1.0);
+        const ox = (container.clientWidth - 1000 * viewScale) / 2;
+        const oy = (container.clientHeight - 1000 * viewScale) / 2;
+        state.workspaceCanvas.style.transform = `translate(${ox}px, ${oy}px) scale(${viewScale})`;
         state.workspaceCanvas.classList.remove('hidden');
 
-        // Center subject
-        state.subjectScale = 0.6;
-        state.subjectPosition = { x: 400, y: 400 };
+        // Center subject with a reasonable scale relative to 1000x1000 composition canvas
+        state.subjectScale = Math.min(600 / croppedCanvas.width, 600 / croppedCanvas.height, 1.0);
+        state.subjectPosition = { x: 500, y: 500 };
 
         document.getElementById('gen-placeholder').classList.add('hidden');
         document.getElementById('btn-generate-bg').removeAttribute('disabled');
         document.getElementById('subject-scale').removeAttribute('disabled');
-        document.getElementById('subject-scale').value = 60;
-        document.getElementById('subject-scale-val').innerText = '60%';
+        
+        const sliderPct = Math.round(state.subjectScale * 100);
+        document.getElementById('subject-scale').value = sliderPct;
+        document.getElementById('subject-scale-val').innerText = `${sliderPct}%`;
 
         hideLoader();
         renderComposition();
@@ -258,21 +309,19 @@
 
         ctx.clearRect(0, 0, w, h);
 
-        // 1. Draw Background (generated or grey checker placeholder)
+        // 1. Draw Background
         if (state.backgroundImage) {
             ctx.drawImage(state.backgroundImage, 0, 0, w, h);
         } else {
-            // Placeholder background
             ctx.fillStyle = '#0f172a';
             ctx.fillRect(0, 0, w, h);
 
-            // Draw a subtle border inside
             ctx.strokeStyle = '#334155';
-            ctx.lineWidth = 2;
-            ctx.strokeRect(10, 10, w - 20, h - 20);
+            ctx.lineWidth = 4;
+            ctx.strokeRect(20, 20, w - 40, h - 40);
 
             ctx.fillStyle = '#64748b';
-            ctx.font = '14px Outfit, sans-serif';
+            ctx.font = '24px Outfit, sans-serif';
             ctx.textAlign = 'center';
             ctx.fillText('Nenhum Fundo Gerado. Digite um prompt e clique em "Criar Fundo IA".', w/2, h/2);
         }
@@ -280,14 +329,16 @@
         // 2. Draw Foreground Subject (movable)
         if (state.foregroundImage) {
             const img = state.foregroundImage;
-            const subW = img.naturalWidth * state.subjectScale;
-            const subH = img.naturalHeight * state.subjectScale;
+            const subW = img.width * state.subjectScale;
+            const subH = img.height * state.subjectScale;
 
             ctx.save();
-            // Draw centered around subjectPosition
             ctx.drawImage(img, state.subjectPosition.x - subW / 2, state.subjectPosition.y - subH / 2, subW, subH);
-
-            // If background is active, draw a subtle visual indicator box on hover or select if wanted
+            
+            // Subtle boundary box on subject
+            ctx.strokeStyle = 'rgba(124, 58, 237, 0.5)';
+            ctx.lineWidth = Math.max(2, 2 / (parseFloat(state.workspaceCanvas.style.transform.match(/scale\((.*?)\)/)?.[1] || 1)));
+            ctx.strokeRect(state.subjectPosition.x - subW / 2 - 2, state.subjectPosition.y - subH / 2 - 2, subW + 4, subH + 4);
             ctx.restore();
         }
     }
@@ -309,7 +360,7 @@
             return;
         }
 
-        showLoader('Aprimorador IA', 'O Gemini está criando um prompt fotográfico otimizado...', 20);
+        showLoader('Aprimorador IA', 'O Gemini está criando um prompt fotográfico otimizado...');
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;
         const requestPayload = {
@@ -367,7 +418,7 @@
             return;
         }
 
-        showLoader('Criando Fundo...', 'O Gemini Imagen está gerando seu fundo sob medida...', 15);
+        showLoader('Criando Fundo...', 'O Gemini Imagen está gerando seu fundo sob medida...');
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/imagen-4.0-generate-001:predict?key=${apiKey}`;
         const payload = {
@@ -376,7 +427,7 @@
             ],
             parameters: {
                 sampleCount: 1,
-                aspectRatio: "1:1" // Perfect squares
+                aspectRatio: "1:1"
             }
         };
 
@@ -416,14 +467,13 @@
         if (!state.foregroundImage) return;
 
         const rect = state.workspaceCanvas.getBoundingClientRect();
-        const scaleX = 800 / rect.width;
-        const scaleY = 800 / rect.height;
+        const scaleX = 1000 / rect.width;
+        const scaleY = 1000 / rect.height;
         const clickX = (e.clientX - rect.left) * scaleX;
         const clickY = (e.clientY - rect.top) * scaleY;
 
-        // Verify if click is within subject boundary box
-        const subW = state.foregroundImage.naturalWidth * state.subjectScale;
-        const subH = state.foregroundImage.naturalHeight * state.subjectScale;
+        const subW = state.foregroundImage.width * state.subjectScale;
+        const subH = state.foregroundImage.height * state.subjectScale;
         const left = state.subjectPosition.x - subW / 2;
         const right = state.subjectPosition.x + subW / 2;
         const top = state.subjectPosition.y - subH / 2;
@@ -432,8 +482,7 @@
         if (clickX >= left && clickX <= right && clickY >= top && clickY <= bottom) {
             state.isDraggingSubject = true;
             state.lastMousePos = { x: e.clientX, y: e.clientY };
-            state.workspaceCanvas.classList.remove('cursor-grab');
-            state.workspaceCanvas.classList.add('cursor-grabbing');
+            state.workspaceCanvas.style.cursor = 'grabbing';
         }
     }
 
@@ -441,8 +490,8 @@
         if (!state.isDraggingSubject) return;
 
         const rect = state.workspaceCanvas.getBoundingClientRect();
-        const scaleX = 800 / rect.width;
-        const scaleY = 800 / rect.height;
+        const scaleX = 1000 / rect.width;
+        const scaleY = 1000 / rect.height;
 
         const dx = (e.clientX - state.lastMousePos.x) * scaleX;
         const dy = (e.clientY - state.lastMousePos.y) * scaleY;
@@ -457,17 +506,37 @@
     function endDragSubject() {
         if (state.isDraggingSubject) {
             state.isDraggingSubject = false;
-            state.workspaceCanvas.classList.remove('cursor-grabbing');
-            state.workspaceCanvas.classList.add('cursor-grab');
+            state.workspaceCanvas.style.cursor = 'grab';
         }
     }
 
     // EXPORT
     function downloadComposition() {
         if (!state.workspaceCanvas) return;
+        
+        // Export high resolution 1000x1000 composite without the 紫色 border
+        const canvas = document.createElement('canvas');
+        canvas.width = 1000;
+        canvas.height = 1000;
+        const ctx = canvas.getContext('2d');
+
+        if (state.backgroundImage) {
+            ctx.drawImage(state.backgroundImage, 0, 0, 1000, 1000);
+        } else {
+            ctx.fillStyle = '#0f172a';
+            ctx.fillRect(0, 0, 1000, 1000);
+        }
+
+        if (state.foregroundImage) {
+            const img = state.foregroundImage;
+            const subW = img.width * state.subjectScale;
+            const subH = img.height * state.subjectScale;
+            ctx.drawImage(img, state.subjectPosition.x - subW / 2, state.subjectPosition.y - subH / 2, subW, subH);
+        }
+
         const link = document.createElement('a');
-        link.download = `composição_ia_${Date.now()}.png`;
-        link.href = state.workspaceCanvas.toDataURL('image/png');
+        link.download = `composicao_ia_${Date.now()}.png`;
+        link.href = canvas.toDataURL('image/png');
         link.click();
     }
 
