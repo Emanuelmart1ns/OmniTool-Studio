@@ -130,7 +130,7 @@ function loadToolTemplate(toolId) {
             if (!document.getElementById(scriptId)) {
                 const script = document.createElement('script');
                 script.id = scriptId;
-                script.src = `js/tools/${toolFileMap[toolId] || toolId}.js?v=1.1.2`;
+                script.src = `js/tools/${toolFileMap[toolId] || toolId}.js?v=1.1.3`;
                 script.onload = () => tools[toolId].init();
                 script.onerror = () => {
                     viewport.innerHTML = `<div class="text-center py-12 text-red-400 text-xs">Erro ao carregar o módulo ${tools[toolId].title}.</div>`;
@@ -330,7 +330,7 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
         }
     };
 
-    let lastError = "Nenhuma resposta de imagem obtida.";
+    let errors = [];
 
     for (const model of models) {
         if (retries <= 0) break;
@@ -352,7 +352,7 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
             console.log(`Resposta recebida do modelo ${model}:`, data);
             if (!res.ok) {
                 const errMsg = data?.error?.message || `Erro HTTP ${res.status}`;
-                lastError = errMsg;
+                errors.push(`${model}: ${errMsg}`);
                 if (res.status === 403 || res.status === 401) {
                     showNotification("Chave API inválida ou sem permissão. Clique no botão da chave no topo para corrigir.");
                     return null;
@@ -368,11 +368,35 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
             retries -= 1;
         } catch (e) {
             console.warn(`Modelo ${model} erro:`, e.message || e);
-            lastError = e.message || e;
+            errors.push(`${model}: ${e.message || e}`);
             retries -= 1;
         }
     }
-    showNotification(`Falha na IA: ${lastError}`);
+
+    // Diagnóstico extra: Listar modelos disponíveis
+    let availableImagenModels = [];
+    try {
+        const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
+        const listRes = await fetch(listUrl);
+        if (listRes.ok) {
+            const listData = await listRes.json();
+            console.log("Modelos suportados por esta chave API:", listData.models);
+            availableImagenModels = (listData.models || [])
+                .map(m => m.name.replace("models/", ""))
+                .filter(name => name.includes("imagen"));
+        }
+    } catch (e) {
+        console.warn("Erro ao tentar listar modelos da chave API:", e);
+    }
+
+    let detailMsg = errors.join("\n");
+    if (availableImagenModels.length > 0) {
+        detailMsg += `\n\nModelos Imagen disponíveis nesta chave: ${availableImagenModels.join(", ")}`;
+    } else {
+        detailMsg += `\n\nNenhum modelo Imagen detectado na sua chave API. Verifique se a sua cota ou a sua chave tem suporte para geração/edição de imagens no Google AI Studio.`;
+    }
+
+    showNotification(`Falha na IA:\n${detailMsg}`);
     return null;
 }
 
