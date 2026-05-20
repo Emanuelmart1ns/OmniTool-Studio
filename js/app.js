@@ -130,7 +130,7 @@ function loadToolTemplate(toolId) {
             if (!document.getElementById(scriptId)) {
                 const script = document.createElement('script');
                 script.id = scriptId;
-                script.src = `js/tools/${toolFileMap[toolId] || toolId}.js?v=1.1.3`;
+                script.src = `js/tools/${toolFileMap[toolId] || toolId}.js?v=1.1.4`;
                 script.onload = () => tools[toolId].init();
                 script.onerror = () => {
                     viewport.innerHTML = `<div class="text-center py-12 text-red-400 text-xs">Erro ao carregar o módulo ${tools[toolId].title}.</div>`;
@@ -295,61 +295,90 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
 
     const models = [
         'imagen-3.0-capability-001',
-        'imagen-3.0-editing-001'
+        'imagen-3.0-editing-001',
+        'gemini-2.5-flash-image',
+        'gemini-3-flash-image'
     ];
-
-    const payload = {
-        instances: [{
-            prompt: prompt,
-            referenceImages: [
-                {
-                    referenceType: "REFERENCE_TYPE_RAW",
-                    referenceId: 1,
-                    referenceImage: {
-                        image: {
-                            mimeType: "image/png",
-                            bytesBase64Encoded: originalBase64
-                        }
-                    }
-                },
-                {
-                    referenceType: "REFERENCE_TYPE_MASK",
-                    referenceId: 2,
-                    referenceImage: {
-                        image: {
-                            mimeType: "image/png",
-                            bytesBase64Encoded: maskBase64
-                        }
-                    }
-                }
-            ]
-        }],
-        parameters: {
-            sampleCount: 1,
-            editMode: "EDIT_MODE_INPAINT_REMOVAL"
-        }
-    };
 
     let errors = [];
 
     for (const model of models) {
         if (retries <= 0) break;
-        const url = `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${apiKey}`;
+        
+        const isGeminiModel = model.startsWith('gemini');
+        const url = isGeminiModel 
+            ? `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${apiKey}`
+            : `https://generativelanguage.googleapis.com/v1beta/models/${model}:predict?key=${apiKey}`;
+
         try {
-            console.log(`Enviando requisição Imagen para o modelo ${model}...`);
-            console.log("Payload enviado:", {
-                prompt: payload.instances[0].prompt,
-                parameters: payload.parameters,
-                originalLength: originalBase64.length,
-                maskLength: maskBase64.length
-            });
-            const res = await fetch(url, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(payload)
-            });
+            console.log(`Enviando requisição para o modelo ${model} (${isGeminiModel ? 'generateContent' : 'predict'})...`);
+            
+            let res;
+            if (isGeminiModel) {
+                const payload = {
+                    contents: [
+                        {
+                            role: "user",
+                            parts: [
+                                { text: `In the first image, remove the object marked in white on the second image (the mask) and fill the background seamlessly: ${prompt}` },
+                                { inlineData: { mimeType: "image/png", data: originalBase64 } },
+                                { inlineData: { mimeType: "image/png", data: maskBase64 } }
+                            ]
+                        }
+                    ],
+                    generationConfig: {
+                        responseModalities: ["IMAGE"]
+                    }
+                };
+                
+                res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            } else {
+                const payload = {
+                    instances: [{
+                        prompt: prompt,
+                        referenceImages: [
+                            {
+                                referenceType: "REFERENCE_TYPE_RAW",
+                                referenceId: 1,
+                                referenceImage: {
+                                    image: {
+                                        mimeType: "image/png",
+                                        bytesBase64Encoded: originalBase64
+                                    }
+                                }
+                            },
+                            {
+                                referenceType: "REFERENCE_TYPE_MASK",
+                                referenceId: 2,
+                                referenceImage: {
+                                    image: {
+                                        mimeType: "image/png",
+                                        bytesBase64Encoded: maskBase64
+                                    }
+                                }
+                            }
+                        ]
+                    }],
+                    parameters: {
+                        sampleCount: 1,
+                        editMode: "EDIT_MODE_INPAINT_REMOVAL"
+                    }
+                };
+
+                res = await fetch(url, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+            }
+
             const data = await res.json();
             console.log(`Resposta recebida do modelo ${model}:`, data);
+
             if (!res.ok) {
                 const errMsg = data?.error?.message || `Erro HTTP ${res.status}`;
                 errors.push(`${model}: ${errMsg}`);
@@ -361,9 +390,29 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
                 retries -= 1;
                 continue;
             }
-            if (data.predictions && data.predictions.length > 0 && data.predictions[0].bytesBase64Encoded) {
-                console.log("Imagem gerada com sucesso!");
-                return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+
+            if (isGeminiModel) {
+                const parts = data.candidates?.[0]?.content?.parts || [];
+                let foundImage = null;
+                for (const part of parts) {
+                    if (part.inlineData && part.inlineData.data) {
+                        foundImage = `data:${part.inlineData.mimeType || 'image/png'};base64,${part.inlineData.data}`;
+                        break;
+                    }
+                }
+                if (foundImage) {
+                    console.log("Imagem gerada com sucesso via Gemini Image!");
+                    return foundImage;
+                } else {
+                    errors.push(`${model}: Nenhuma imagem retornada no corpo da resposta.`);
+                }
+            } else {
+                if (data.predictions && data.predictions.length > 0 && data.predictions[0].bytesBase64Encoded) {
+                    console.log("Imagem gerada com sucesso via Imagen Predict!");
+                    return `data:image/png;base64,${data.predictions[0].bytesBase64Encoded}`;
+                } else {
+                    errors.push(`${model}: Resposta de predição vazia.`);
+                }
             }
             retries -= 1;
         } catch (e) {
@@ -373,7 +422,6 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
         }
     }
 
-    // Diagnóstico extra: Listar modelos disponíveis
     let availableImagenModels = [];
     try {
         const listUrl = `https://generativelanguage.googleapis.com/v1beta/models?key=${apiKey}`;
@@ -383,7 +431,7 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
             console.log("Modelos suportados por esta chave API:", listData.models);
             availableImagenModels = (listData.models || [])
                 .map(m => m.name.replace("models/", ""))
-                .filter(name => name.includes("imagen"));
+                .filter(name => name.includes("imagen") || name.includes("image"));
         }
     } catch (e) {
         console.warn("Erro ao tentar listar modelos da chave API:", e);
@@ -391,9 +439,9 @@ async function callGeminiInpainting(prompt, originalBase64, maskBase64, retries 
 
     let detailMsg = errors.join("\n");
     if (availableImagenModels.length > 0) {
-        detailMsg += `\n\nModelos Imagen disponíveis nesta chave: ${availableImagenModels.join(", ")}`;
+        detailMsg += `\n\nModelos de imagem/IA disponíveis nesta chave: ${availableImagenModels.join(", ")}`;
     } else {
-        detailMsg += `\n\nNenhum modelo Imagen detectado na sua chave API. Verifique se a sua cota ou a sua chave tem suporte para geração/edição de imagens no Google AI Studio.`;
+        detailMsg += `\n\nNenhum modelo de imagem detectado na sua chave API. Verifique se a sua cota ou a sua chave tem suporte para geração/edição de imagens no Google AI Studio.`;
     }
 
     showNotification(`Falha na IA:\n${detailMsg}`);
