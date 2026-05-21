@@ -173,7 +173,8 @@
         if (window.imglyRemoveBackground) {
             try {
                 const blob = await window.imglyRemoveBackground(file, {
-                    model: 'isnet', device: 'cpu', proxyToWorker: true
+                    model: 'isnet', device: 'cpu', proxyToWorker: true,
+                    publicPath: 'https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/dist/'
                 });
                 const url = URL.createObjectURL(blob);
                 const tImg = new Image();

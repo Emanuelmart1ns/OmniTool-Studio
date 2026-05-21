@@ -535,7 +535,7 @@ window.ensureMediaPipe = async function() {
 window.loadImglyEngine = async function() {
     if (window.imglyRemoveBackground) return;
     try {
-        const m = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.9.2/+esm');
+        const m = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
         const fn = m.removeBackground || m.default || m.imglyRemoveBackground;
         if (fn) {
             window.imglyRemoveBackground = fn;
