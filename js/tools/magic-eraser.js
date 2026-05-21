@@ -161,11 +161,11 @@
                 state.originalDataURL = ev.target.result;
 
                 state.workspaceCanvas = document.getElementById('canvas-magic-eraser');
-                state.workspaceCtx = state.workspaceCanvas.getContext('2d');
+                state.workspaceCtx = state.workspaceCanvas.getContext('2d', { willReadFrequently: true });
                 state.maskCanvas = document.createElement('canvas');
                 state.maskCanvas.width = img.naturalWidth;
                 state.maskCanvas.height = img.naturalHeight;
-                state.maskCtx = state.maskCanvas.getContext('2d');
+                state.maskCtx = state.maskCanvas.getContext('2d', { willReadFrequently: true });
 
                 state.workspaceCanvas.width = img.naturalWidth;
                 state.workspaceCanvas.height = img.naturalHeight;
@@ -328,13 +328,13 @@
         const originalCanvas = document.createElement('canvas');
         originalCanvas.width = w;
         originalCanvas.height = h;
-        originalCanvas.getContext('2d').drawImage(state.originalImage, 0, 0, w, h);
+        originalCanvas.getContext('2d', { willReadFrequently: true }).drawImage(state.originalImage, 0, 0, w, h);
         const originalBase64 = originalCanvas.toDataURL('image/png').split(',')[1];
 
         const maskBinaryCanvas = document.createElement('canvas');
         maskBinaryCanvas.width = w;
         maskBinaryCanvas.height = h;
-        const mbCtx = maskBinaryCanvas.getContext('2d');
+        const mbCtx = maskBinaryCanvas.getContext('2d', { willReadFrequently: true });
         
         mbCtx.fillStyle = 'black';
         mbCtx.fillRect(0, 0, w, h);

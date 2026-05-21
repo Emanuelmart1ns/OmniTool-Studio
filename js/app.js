@@ -518,18 +518,19 @@ function loadScript(src, id) {
 
 window.ensureTesseract = async function() {
     if (typeof Tesseract !== 'undefined') return;
-    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js', 'tesseract-js');
+    await loadScript('https://cdn.jsdelivr.net/npm/tesseract.js@6/dist/tesseract.min.js', 'tesseract-js');
 };
 
 window.ensureMediaPipe = async function() {
-    if (typeof SelfieSegmentation !== 'undefined') return;
-    await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js', 'mediapipe-selfie');
+    if (window._mediaPipeTasksVisionLoaded) return;
+    await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.js', 'mediapipe-tasks-vision');
+    window._mediaPipeTasksVisionLoaded = true;
 };
 
 window.loadImglyEngine = async function() {
     if (window.imglyRemoveBackground) return;
     try {
-        const m = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.7.0/+esm');
+        const m = await import('https://cdn.jsdelivr.net/npm/@imgly/background-removal@1.9.2/+esm');
         const fn = m.removeBackground || m.default || m.imglyRemoveBackground;
         if (fn) {
             window.imglyRemoveBackground = fn;

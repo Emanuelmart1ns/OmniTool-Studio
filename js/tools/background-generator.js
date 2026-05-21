@@ -172,10 +172,13 @@
         showLoader('Isolando...', 'Removendo fundo automaticamente.');
         if (window.imglyRemoveBackground) {
             try {
-                const blob = await window.imglyRemoveBackground(file, { model: 'isnet_quint8', device: 'cpu', proxyToWorker: false });
+                const blob = await window.imglyRemoveBackground(file, {
+                    model: 'isnet', device: 'cpu', proxyToWorker: true
+                });
+                const url = URL.createObjectURL(blob);
                 const tImg = new Image();
-                tImg.onload = () => loadForeground(tImg);
-                tImg.src = URL.createObjectURL(blob);
+                tImg.onload = () => { URL.revokeObjectURL(url); loadForeground(tImg); };
+                tImg.src = url;
                 return;
             } catch {}
         }
@@ -189,8 +192,9 @@
         const w = img.naturalWidth || img.width;
         const h = img.naturalHeight || img.height;
         c.width = w; c.height = h;
-        c.getContext('2d').drawImage(img, 0, 0);
-        const d = c.getContext('2d').getImageData(0, 0, w, h).data;
+        const ctx = c.getContext('2d', { willReadFrequently: true });
+        ctx.drawImage(img, 0, 0);
+        const d = ctx.getImageData(0, 0, w, h).data;
         let minX = w, maxX = 0, minY = h, maxY = 0, found = false;
         for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
             if (d[(y * w + x) * 4 + 3] > 5) {

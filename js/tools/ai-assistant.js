@@ -168,7 +168,7 @@
         if (w > h) { if (w > maxDim) { h = Math.round((h * maxDim) / w); w = maxDim; } }
         else { if (h > maxDim) { w = Math.round((w * maxDim) / h); h = maxDim; } }
         miniCanvas.width = w; miniCanvas.height = h;
-        miniCanvas.getContext('2d').drawImage(state.selectedImage, 0, 0, w, h);
+        miniCanvas.getContext('2d', { willReadFrequently: true }).drawImage(state.selectedImage, 0, 0, w, h);
         const base64Data = miniCanvas.toDataURL('image/png').split(',')[1];
 
         const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`;

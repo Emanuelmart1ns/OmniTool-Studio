@@ -87,7 +87,7 @@
         const img = state.originalImage;
         const c = document.createElement('canvas');
         const side = 60; c.width = side; c.height = side;
-        const ctx = c.getContext('2d');
+        const ctx = c.getContext('2d', { willReadFrequently: true });
         ctx.drawImage(img, 0, 0, side, side);
         const d = ctx.getImageData(0, 0, side, side).data;
         const buckets = {};

@@ -158,7 +158,7 @@
             img.onload = () => {
                 state.originalImage = img;
                 state.workspaceCanvas = document.getElementById('canvas-magic-grab');
-                state.workspaceCtx = state.workspaceCanvas.getContext('2d');
+                state.workspaceCtx = state.workspaceCanvas.getContext('2d', { willReadFrequently: true });
                 state.workspaceCanvas.width = img.naturalWidth;
                 state.workspaceCanvas.height = img.naturalHeight;
                 fitCanvasInContainer(state.workspaceCanvas, document.getElementById('grab-workspace-container'));
@@ -210,31 +210,50 @@
     async function runMediaPipeGrab() {
         showLoader('Separando...', 'MediaPipe AI processando...', 30);
         try {
-            if (typeof window.ensureMediaPipe === 'function') await window.ensureMediaPipe();
-            const seg = new SelfieSegmentation({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
-            seg.setOptions({ modelSelection: 1 });
-            seg.onResults((results) => {
-                const w = state.originalImage.naturalWidth;
-                const h = state.originalImage.naturalHeight;
-                const mask = document.createElement('canvas');
-                mask.width = w; mask.height = h;
-                const mCtx = mask.getContext('2d');
-                mCtx.drawImage(results.segmentationMask, 0, 0);
-                const imgData = mCtx.getImageData(0, 0, w, h);
-                const d = imgData.data;
-                for (let i = 0; i < d.length; i += 4) {
-                    const v = d[i] > 128 ? 255 : 0;
-                    d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = v;
-                }
-                mCtx.putImageData(imgData, 0, 0);
-                applyIsolateSubject(mask);
+            await window.ensureMediaPipe();
+            const { ImageSegmenter, FilesetResolver } = window.MediaPipeTasksVision || mpTasksVision();
+
+            const vision = await FilesetResolver.forVisionTasks(
+                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'
+            );
+            const imageSegmenter = await ImageSegmenter.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+                    delegate: 'GPU'
+                },
+                outputCategoryMask: true,
+                outputConfidenceMasks: false,
+                runningMode: 'IMAGE'
             });
-            setTimeout(() => {
-                seg.send({ image: state.originalImage }).catch(() => {
-                    hideLoader(); showNotification("Falha no MediaPipe.");
-                });
-            }, 300);
-        } catch (e) { hideLoader(); showNotification("Não foi possível iniciar o MediaPipe."); }
+
+            const w = state.originalImage.naturalWidth;
+            const h = state.originalImage.naturalHeight;
+
+            const result = imageSegmenter.segment(state.originalImage);
+            const categoryMask = result.categoryMask;
+            const maskData = categoryMask.getAsUint8Array();
+
+            const mask = document.createElement('canvas');
+            mask.width = w; mask.height = h;
+            const mCtx = mask.getContext('2d', { willReadFrequently: true });
+            const imgData = mCtx.createImageData(w, h);
+            const d = imgData.data;
+            for (let i = 0; i < maskData.length; i++) {
+                const v = maskData[i] > 0 ? 255 : 0;
+                d[i * 4] = 255; d[i * 4 + 1] = 255; d[i * 4 + 2] = 255; d[i * 4 + 3] = v;
+            }
+            mCtx.putImageData(imgData, 0, 0);
+
+            categoryMask.close();
+            imageSegmenter.close();
+
+            applyIsolateSubject(mask);
+        } catch (e) {
+            console.error('MediaPipe tasks-vision error (grab):', e);
+            hideLoader();
+            showNotification("Falha no MediaPipe. A usar motor de Objectos como fallback.");
+            runImglyGrab();
+        }
     }
 
     async function runImglyGrab() {
@@ -247,22 +266,23 @@
         }
         showLoader('Separando...', 'IMG.LY processando...', 15);
         try {
-            let blob = null;
-            try {
-                blob = await window.imglyRemoveBackground(state.currentFile, { model: 'isnet_quint8', device: 'cpu', proxyToWorker: false });
-            } catch (firstError) {
-                console.warn('IMG.LY primeira tentativa falhou, tentando worker:', firstError);
-                blob = await window.imglyRemoveBackground(state.currentFile, { model: 'isnet_quint8', device: 'cpu', proxyToWorker: true });
-            }
+            const blob = await window.imglyRemoveBackground(state.currentFile, {
+                model: 'isnet', device: 'cpu', proxyToWorker: true,
+                progress: (key, current, total) => {
+                    const pct = Math.round((current / total) * 80) + 15;
+                    showLoader('Separando...', `IMG.LY: ${Math.round((current/total)*100)}%`, pct);
+                }
+            });
             if (!blob) throw new Error('Nenhum resultado retornado pelo motor IMG.LY');
 
+            const url = URL.createObjectURL(blob);
             const resImg = new Image();
             resImg.onload = () => {
                 const w = state.originalImage.naturalWidth;
                 const h = state.originalImage.naturalHeight;
                 const mask = document.createElement('canvas');
                 mask.width = w; mask.height = h;
-                const mCtx = mask.getContext('2d');
+                const mCtx = mask.getContext('2d', { willReadFrequently: true });
                 mCtx.drawImage(resImg, 0, 0);
                 const imgData = mCtx.getImageData(0, 0, w, h);
                 const d = imgData.data;
@@ -270,17 +290,17 @@
                     d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = d[i+3] > 10 ? 255 : 0;
                 }
                 mCtx.putImageData(imgData, 0, 0);
+                URL.revokeObjectURL(url);
                 applyIsolateSubject(mask);
             };
             resImg.onerror = (err) => {
                 hideLoader();
+                URL.revokeObjectURL(url);
                 showNotification('Falha ao processar a máscara de objeto. Tente novamente com outra imagem.');
-                console.error('Erro ao carregar resultado IMG.LY:', err);
             };
-            resImg.src = URL.createObjectURL(blob);
+            resImg.src = url;
         } catch (e) {
             hideLoader();
-            console.error('Erro IMG.LY object separation:', e);
             showNotification("Falha ao isolar objeto. Verifique se a imagem contém um único objeto reconhecível.");
         }
     }
@@ -321,7 +341,8 @@
             const w = state.originalImage.naturalWidth;
             const h = state.originalImage.naturalHeight;
             const bgC = document.createElement('canvas'); bgC.width = w; bgC.height = h;
-            bgC.getContext('2d').drawImage(state.originalImage, 0, 0);
+            const bgCtx = bgC.getContext('2d', { willReadFrequently: true });
+            bgCtx.drawImage(state.originalImage, 0, 0);
             performLocalInpaint(bgC, maskCanvas);
             state.backgroundCanvas = bgC;
 
@@ -334,11 +355,11 @@
     }
 
     function performLocalInpaint(canvas, mask) {
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { willReadFrequently: true });
         const w = canvas.width, h = canvas.height;
         const imgData = ctx.getImageData(0, 0, w, h);
         const pixels = imgData.data;
-        const mPx = mask.getContext('2d').getImageData(0, 0, w, h).data;
+        const mPx = mask.getContext('2d', { willReadFrequently: true }).getImageData(0, 0, w, h).data;
         const maskCoords = [], borderCoords = [];
 
         for (let y = 1; y < h - 1; y++) for (let x = 1; x < w - 1; x++) {

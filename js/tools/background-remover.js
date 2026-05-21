@@ -241,17 +241,17 @@
             img.onload = () => {
                 state.originalImage = img;
                 state.workspaceCanvas = document.getElementById('canvas-bg-remover');
-                state.workspaceCtx = state.workspaceCanvas.getContext('2d');
 
                 state.maskCanvas = document.createElement('canvas');
                 state.maskCanvas.width = img.naturalWidth;
                 state.maskCanvas.height = img.naturalHeight;
-                state.maskCtx = state.maskCanvas.getContext('2d');
+                state.maskCtx = state.maskCanvas.getContext('2d', { willReadFrequently: true });
                 state.maskCtx.fillStyle = '#ffffff';
                 state.maskCtx.fillRect(0, 0, img.naturalWidth, img.naturalHeight);
 
                 state.workspaceCanvas.width = img.naturalWidth;
                 state.workspaceCanvas.height = img.naturalHeight;
+                state.workspaceCtx = state.workspaceCanvas.getContext('2d', { willReadFrequently: true });
                 state.workspaceCanvas.classList.remove('hidden');
 
                 document.getElementById('upload-placeholder').classList.add('hidden');
@@ -354,33 +354,55 @@
     async function runMediaPipe() {
         showLoader('MediaPipe AI', 'Isolando silhueta...', 30);
         try {
-            if (typeof window.ensureMediaPipe === 'function') await window.ensureMediaPipe();
-            const seg = new SelfieSegmentation({ locateFile: f => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${f}` });
-            seg.setOptions({ modelSelection: 1 });
-            seg.onResults((results) => {
-                try {
-                    const w = state.originalImage.naturalWidth;
-                    const h = state.originalImage.naturalHeight;
-                    state.maskCtx.clearRect(0, 0, w, h);
-                    state.maskCtx.drawImage(results.segmentationMask, 0, 0, w, h);
-                    const imgData = state.maskCtx.getImageData(0, 0, w, h);
-                    const d = imgData.data;
-                    for (let i = 0; i < d.length; i += 4) {
-                        const v = d[i] > 128 ? 255 : 0;
-                        d[i] = 255; d[i+1] = 255; d[i+2] = 255; d[i+3] = v;
-                    }
-                    state.maskCtx.putImageData(imgData, 0, 0);
-                    cacheAiMask();
-                    hideLoader(); renderWorkspace();
-                    showNotification("Fundo de pessoa removido!");
-                } catch (e) { hideLoader(); showNotification("Erro ao processar máscara."); }
+            await window.ensureMediaPipe();
+            const { ImageSegmenter, FilesetResolver } = window.MediaPipeTasksVision || mpTasksVision();
+
+            // Carrega o FilesetResolver e o ImageSegmenter com o modelo selfie
+            const vision = await FilesetResolver.forVisionTasks(
+                'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'
+            );
+            const imageSegmenter = await ImageSegmenter.createFromOptions(vision, {
+                baseOptions: {
+                    modelAssetPath: 'https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/latest/selfie_segmenter.tflite',
+                    delegate: 'GPU'
+                },
+                outputCategoryMask: true,
+                outputConfidenceMasks: false,
+                runningMode: 'IMAGE'
             });
-            setTimeout(() => {
-                seg.send({ image: state.originalImage }).catch(() => {
-                    hideLoader(); showNotification("MediaPipe falhou. Use o motor Objetos.");
-                });
-            }, 300);
-        } catch (e) { hideLoader(); showNotification("Não foi possível iniciar o MediaPipe."); }
+
+            const w = state.originalImage.naturalWidth;
+            const h = state.originalImage.naturalHeight;
+
+            // Processa a imagem
+            const result = imageSegmenter.segment(state.originalImage);
+            const categoryMask = result.categoryMask;
+            const maskData = categoryMask.getAsUint8Array();
+
+            state.maskCtx.clearRect(0, 0, w, h);
+            const imgData = state.maskCtx.createImageData(w, h);
+            const d = imgData.data;
+            for (let i = 0; i < maskData.length; i++) {
+                // categoria 1 = pessoa (selfie segmenter)
+                const v = maskData[i] > 0 ? 255 : 0;
+                d[i * 4] = 255; d[i * 4 + 1] = 255; d[i * 4 + 2] = 255; d[i * 4 + 3] = v;
+            }
+            state.maskCtx.putImageData(imgData, 0, 0);
+
+            categoryMask.close();
+            imageSegmenter.close();
+
+            cacheAiMask();
+            hideLoader();
+            renderWorkspace();
+            showNotification("Fundo de pessoa removido!");
+        } catch (e) {
+            console.error('MediaPipe tasks-vision error:', e);
+            hideLoader();
+            showNotification("Falha no MediaPipe. A usar motor de Objectos como fallback.");
+            // Fallback para IMG.LY
+            runImgly();
+        }
     }
 
     async function runImgly() {
@@ -394,7 +416,7 @@
 
         try {
             const blob = await window.imglyRemoveBackground(state.currentFile, {
-                model: 'isnet_quint8', device: 'cpu', proxyToWorker: false,
+                model: 'isnet', device: 'cpu', proxyToWorker: true,
                 progress: (key, current, total) => {
                     updateLoaderProgress(Math.round((current / total) * 90), `Download modelo: ${Math.round((current/total)*100)}%`);
                 }
@@ -407,8 +429,9 @@
                 const h = state.originalImage.naturalHeight;
                 const tmp = document.createElement('canvas');
                 tmp.width = w; tmp.height = h;
-                tmp.getContext('2d').drawImage(resImg, 0, 0, w, h);
-                const imgData = tmp.getContext('2d').getImageData(0, 0, w, h);
+                const tmpCtx = tmp.getContext('2d', { willReadFrequently: true });
+                tmpCtx.drawImage(resImg, 0, 0, w, h);
+                const imgData = tmpCtx.getImageData(0, 0, w, h);
                 const d = imgData.data;
                 state.maskCtx.clearRect(0, 0, w, h);
                 for (let i = 0; i < d.length; i += 4) {
@@ -418,6 +441,7 @@
                 state.maskCtx.putImageData(imgData, 0, 0);
                 cacheAiMask(); hideLoader(); renderWorkspace();
                 showNotification("Fundo de objeto removido!");
+                URL.revokeObjectURL(url);
             };
             resImg.src = url;
         } catch (e) { hideLoader(); showNotification("Falha no motor de Objetos."); }
