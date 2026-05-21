@@ -355,7 +355,9 @@
         showLoader('MediaPipe AI', 'Isolando silhueta...', 30);
         try {
             await window.ensureMediaPipe();
-            const { ImageSegmenter, FilesetResolver } = window.MediaPipeTasksVision || mpTasksVision();
+            const visionBundle = window.MediaPipeTasksVision;
+            if (!visionBundle) throw new Error("Biblioteca MediaPipe Tasks Vision não inicializada.");
+            const { ImageSegmenter, FilesetResolver } = visionBundle;
 
             // Carrega o FilesetResolver e o ImageSegmenter com o modelo selfie
             const vision = await FilesetResolver.forVisionTasks(

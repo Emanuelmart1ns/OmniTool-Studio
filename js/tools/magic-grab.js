@@ -211,7 +211,9 @@
         showLoader('Separando...', 'MediaPipe AI processando...', 30);
         try {
             await window.ensureMediaPipe();
-            const { ImageSegmenter, FilesetResolver } = window.MediaPipeTasksVision || mpTasksVision();
+            const visionBundle = window.MediaPipeTasksVision;
+            if (!visionBundle) throw new Error("Biblioteca MediaPipe Tasks Vision não inicializada.");
+            const { ImageSegmenter, FilesetResolver } = visionBundle;
 
             const vision = await FilesetResolver.forVisionTasks(
                 'https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/wasm'

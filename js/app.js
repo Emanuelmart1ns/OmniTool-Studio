@@ -522,9 +522,14 @@ window.ensureTesseract = async function() {
 };
 
 window.ensureMediaPipe = async function() {
-    if (window._mediaPipeTasksVisionLoaded) return;
-    await loadScript('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.js', 'mediapipe-tasks-vision');
-    window._mediaPipeTasksVisionLoaded = true;
+    if (window.MediaPipeTasksVision) return;
+    try {
+        const m = await import('https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.22/vision_bundle.js');
+        window.MediaPipeTasksVision = m;
+    } catch (e) {
+        console.error('Failed to load MediaPipe Tasks Vision:', e);
+        throw e;
+    }
 };
 
 window.loadImglyEngine = async function() {
